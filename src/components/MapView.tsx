@@ -6,6 +6,7 @@ const GOOGLE_MAPS_API_KEY = "AIzaSyDABp7Bg9ODZSE3oFcJ5LpdBz2wLqP7PRg";
 const MapView = () => {
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
+  const [isMapReady, setIsMapReady] = useState(false);
 
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
@@ -29,15 +30,18 @@ const MapView = () => {
 
   const onLoad = useCallback((map: google.maps.Map) => {
     setMap(map);
+    // Add a small delay to ensure map is fully ready
+    setTimeout(() => setIsMapReady(true), 500);
   }, []);
 
   const onUnmount = useCallback(() => {
     setMap(null);
+    setIsMapReady(false);
   }, []);
 
   // Animate the route
   useEffect(() => {
-    if (!map || currentStep >= journeyCoordinates.length - 1) return;
+    if (!map || !isMapReady || currentStep >= journeyCoordinates.length - 1) return;
 
     const timer = setTimeout(() => {
       setCurrentStep(prev => prev + 1);
@@ -49,7 +53,7 @@ const MapView = () => {
     }, 2000);
 
     return () => clearTimeout(timer);
-  }, [map, currentStep, journeyCoordinates]);
+  }, [map, isMapReady, currentStep, journeyCoordinates]);
 
   if (!isLoaded) {
     return (
@@ -76,49 +80,54 @@ const MapView = () => {
           fullscreenControl: false,
         }}
       >
-        {/* Animated route line */}
-        {pathSoFar.length > 1 && (
-          <Polyline
-            path={pathSoFar}
-            options={{
-              strokeColor: "#1A73E8",
-              strokeOpacity: 0.8,
-              strokeWeight: 4,
-            }}
-          />
+        {/* Only render map elements after map is ready */}
+        {isMapReady && (
+          <>
+            {/* Animated route line */}
+            {pathSoFar.length > 1 && (
+              <Polyline
+                path={pathSoFar}
+                options={{
+                  strokeColor: "#1A73E8",
+                  strokeOpacity: 0.8,
+                  strokeWeight: 4,
+                }}
+              />
+            )}
+
+            {/* Start marker */}
+            <Marker
+              position={startPoint}
+              icon={{
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 8,
+                fillColor: "#34A853",
+                fillOpacity: 1,
+                strokeColor: "#ffffff",
+                strokeWeight: 2,
+              }}
+            />
+
+            {/* Current position marker */}
+            <Marker
+              position={currentPosition}
+              icon={{
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 10,
+                fillColor: "#1A73E8",
+                fillOpacity: 1,
+                strokeColor: "#ffffff",
+                strokeWeight: 3,
+              }}
+            />
+
+            {/* Destination marker */}
+            <Marker
+              position={endPoint}
+              label="📍"
+            />
+          </>
         )}
-
-        {/* Start marker */}
-        <Marker
-          position={startPoint}
-          icon={{
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 8,
-            fillColor: "#34A853",
-            fillOpacity: 1,
-            strokeColor: "#ffffff",
-            strokeWeight: 2,
-          }}
-        />
-
-        {/* Current position marker */}
-        <Marker
-          position={currentPosition}
-          icon={{
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 10,
-            fillColor: "#1A73E8",
-            fillOpacity: 1,
-            strokeColor: "#ffffff",
-            strokeWeight: 3,
-          }}
-        />
-
-        {/* Destination marker */}
-        <Marker
-          position={endPoint}
-          label="📍"
-        />
       </GoogleMap>
     </div>
   );
