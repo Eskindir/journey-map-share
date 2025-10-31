@@ -1,63 +1,168 @@
-import { MapPin, Navigation } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import mapboxgl from "mapbox-gl";
+import "mapbox-gl/dist/mapbox-gl.css";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
 
 const MapView = () => {
+  const mapContainer = useRef<HTMLDivElement>(null);
+  const map = useRef<mapboxgl.Map | null>(null);
+  const [mapboxToken, setMapboxToken] = useState("");
+  const [tokenSaved, setTokenSaved] = useState(false);
+
+  useEffect(() => {
+    if (!mapContainer.current || !tokenSaved || !mapboxToken) return;
+
+    mapboxgl.accessToken = mapboxToken;
+
+    // Journey coordinates (simulating a route)
+    const startPoint: [number, number] = [-122.4194, 37.7749]; // San Francisco
+    const endPoint: [number, number] = [-122.4094, 37.7849];
+    
+    // Create intermediate points for the journey
+    const totalSteps = 20;
+    const journeyCoordinates: [number, number][] = [];
+    for (let i = 0; i <= totalSteps; i++) {
+      const progress = i / totalSteps;
+      journeyCoordinates.push([
+        startPoint[0] + (endPoint[0] - startPoint[0]) * progress,
+        startPoint[1] + (endPoint[1] - startPoint[1]) * progress
+      ]);
+    }
+
+    map.current = new mapboxgl.Map({
+      container: mapContainer.current,
+      style: "mapbox://styles/mapbox/streets-v12",
+      center: startPoint,
+      zoom: 13,
+    });
+
+    // Add navigation controls
+    map.current.addControl(new mapboxgl.NavigationControl(), "top-right");
+
+    let currentStep = 0;
+
+    map.current.on("load", () => {
+      if (!map.current) return;
+
+      // Add the route source
+      map.current.addSource("route", {
+        type: "geojson",
+        data: {
+          type: "Feature",
+          properties: {},
+          geometry: {
+            type: "LineString",
+            coordinates: [journeyCoordinates[0]]
+          }
+        }
+      });
+
+      // Add the route layer
+      map.current.addLayer({
+        id: "route",
+        type: "line",
+        source: "route",
+        layout: {
+          "line-join": "round",
+          "line-cap": "round"
+        },
+        paint: {
+          "line-color": "#1A73E8",
+          "line-width": 4,
+          "line-opacity": 0.8
+        }
+      });
+
+      // Add start marker
+      new mapboxgl.Marker({ color: "#34A853" })
+        .setLngLat(startPoint)
+        .addTo(map.current);
+
+      // Add current position marker
+      const currentMarker = new mapboxgl.Marker({ color: "#1A73E8" })
+        .setLngLat(startPoint)
+        .addTo(map.current);
+
+      // Animate the route line
+      const animateRoute = () => {
+        if (!map.current || currentStep >= journeyCoordinates.length) return;
+
+        currentStep++;
+        const currentCoordinates = journeyCoordinates.slice(0, currentStep + 1);
+
+        const source = map.current.getSource("route") as mapboxgl.GeoJSONSource;
+        if (source) {
+          source.setData({
+            type: "Feature",
+            properties: {},
+            geometry: {
+              type: "LineString",
+              coordinates: currentCoordinates
+            }
+          });
+        }
+
+        // Update current position marker
+        currentMarker.setLngLat(journeyCoordinates[currentStep]);
+
+        // Pan map to follow current position
+        map.current.panTo(journeyCoordinates[currentStep]);
+
+        if (currentStep < journeyCoordinates.length - 1) {
+          setTimeout(animateRoute, 2000); // Update every 2 seconds
+        }
+      };
+
+      // Start animation after 1 second
+      setTimeout(animateRoute, 1000);
+    });
+
+    return () => {
+      map.current?.remove();
+    };
+  }, [mapboxToken, tokenSaved]);
+
+  if (!tokenSaved) {
+    return (
+      <div className="relative w-full h-full bg-gradient-to-br from-primary/5 to-primary/10 flex items-center justify-center p-6">
+        <div className="bg-card p-6 rounded-lg shadow-lg max-w-md w-full space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="mapbox-token">Mapbox Public Token</Label>
+            <Input
+              id="mapbox-token"
+              type="text"
+              placeholder="pk.eyJ1..."
+              value={mapboxToken}
+              onChange={(e) => setMapboxToken(e.target.value)}
+            />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Get your token from{" "}
+            <a
+              href="https://mapbox.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary underline"
+            >
+              mapbox.com
+            </a>
+          </p>
+          <button
+            onClick={() => setTokenSaved(true)}
+            disabled={!mapboxToken}
+            className="w-full bg-primary text-primary-foreground py-2 rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Load Map
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="relative w-full h-full bg-gradient-to-br from-muted/30 via-muted/10 to-background overflow-hidden">
-      {/* Map grid pattern */}
-      <div className="absolute inset-0 opacity-20">
-        <div className="absolute inset-0" style={{
-          backgroundImage: `
-            linear-gradient(hsl(var(--border)) 1px, transparent 1px),
-            linear-gradient(90deg, hsl(var(--border)) 1px, transparent 1px)
-          `,
-          backgroundSize: '40px 40px'
-        }} />
-      </div>
-      
-      {/* Simulated map streets */}
-      <svg className="absolute inset-0 w-full h-full opacity-30" xmlns="http://www.w3.org/2000/svg">
-        <line x1="0" y1="30%" x2="100%" y2="30%" stroke="hsl(var(--border))" strokeWidth="2" />
-        <line x1="0" y1="60%" x2="100%" y2="60%" stroke="hsl(var(--border))" strokeWidth="2" />
-        <line x1="20%" y1="0" x2="20%" y2="100%" stroke="hsl(var(--border))" strokeWidth="2" />
-        <line x1="50%" y1="0" x2="50%" y2="100%" stroke="hsl(var(--border))" strokeWidth="3" />
-        <line x1="80%" y1="0" x2="80%" y2="100%" stroke="hsl(var(--border))" strokeWidth="2" />
-      </svg>
-
-      {/* User location marker - centered */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
-        <div className="relative">
-          {/* Pulsing circle animation */}
-          <div className="absolute inset-0 -m-4">
-            <div className="w-16 h-16 rounded-full bg-primary/20 animate-ping" />
-          </div>
-          <div className="absolute inset-0 -m-2">
-            <div className="w-12 h-12 rounded-full bg-primary/30" />
-          </div>
-          
-          {/* Main marker */}
-          <div className="relative bg-primary text-primary-foreground rounded-full p-3 shadow-float">
-            <Navigation className="w-6 h-6 fill-current" />
-          </div>
-        </div>
-      </div>
-
-      {/* Destination marker (example) */}
-      <div className="absolute top-[25%] right-[20%] z-10">
-        <div className="relative">
-          <MapPin className="w-10 h-10 text-accent drop-shadow-lg fill-current" />
-          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-3 h-3 bg-accent/30 rounded-full blur-sm" />
-        </div>
-      </div>
-
-      {/* Map controls */}
-      <div className="absolute bottom-6 right-6 flex flex-col gap-2">
-        <button className="bg-card text-card-foreground p-3 rounded-lg shadow-elevated hover:shadow-float transition-all hover:scale-105">
-          <span className="text-xl font-bold">+</span>
-        </button>
-        <button className="bg-card text-card-foreground p-3 rounded-lg shadow-elevated hover:shadow-float transition-all hover:scale-105">
-          <span className="text-xl font-bold">−</span>
-        </button>
-      </div>
+    <div className="relative w-full h-full">
+      <div ref={mapContainer} className="absolute inset-0" />
     </div>
   );
 };
