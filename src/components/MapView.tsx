@@ -1,134 +1,137 @@
-import { useEffect, useState, useCallback } from "react";
-import { GoogleMap, useJsApiLoader, Polyline, Marker } from "@react-google-maps/api";
-
-const GOOGLE_MAPS_API_KEY = "AIzaSyDABp7Bg9ODZSE3oFcJ5LpdBz2wLqP7PRg";
+import { useEffect, useState } from "react";
+import { MapPin, Navigation } from "lucide-react";
 
 const MapView = () => {
-  const [map, setMap] = useState<google.maps.Map | null>(null);
-  const [currentStep, setCurrentStep] = useState(0);
-  const [isMapReady, setIsMapReady] = useState(false);
+  const [progress, setProgress] = useState(0);
 
-  const { isLoaded } = useJsApiLoader({
-    id: 'google-map-script',
-    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-  });
-
-  // Journey coordinates (simulating a route)
-  const startPoint = { lat: 37.7749, lng: -122.4194 }; // San Francisco
-  const endPoint = { lat: 37.7849, lng: -122.4094 };
-  
-  // Create intermediate points for the journey
-  const totalSteps = 20;
-  const journeyCoordinates: google.maps.LatLngLiteral[] = [];
-  for (let i = 0; i <= totalSteps; i++) {
-    const progress = i / totalSteps;
-    journeyCoordinates.push({
-      lat: startPoint.lat + (endPoint.lat - startPoint.lat) * progress,
-      lng: startPoint.lng + (endPoint.lng - startPoint.lng) * progress
-    });
-  }
-
-  const onLoad = useCallback((map: google.maps.Map) => {
-    setMap(map);
-    // Add a small delay to ensure map is fully ready
-    setTimeout(() => setIsMapReady(true), 500);
-  }, []);
-
-  const onUnmount = useCallback(() => {
-    setMap(null);
-    setIsMapReady(false);
-  }, []);
-
-  // Animate the route
+  // Simulate journey progress
   useEffect(() => {
-    if (!map || !isMapReady || currentStep >= journeyCoordinates.length - 1) return;
-
-    const timer = setTimeout(() => {
-      setCurrentStep(prev => prev + 1);
-      
-      // Pan map to follow current position
-      if (journeyCoordinates[currentStep + 1]) {
-        map.panTo(journeyCoordinates[currentStep + 1]);
-      }
+    const interval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 100) return 100;
+        return prev + 5;
+      });
     }, 2000);
 
-    return () => clearTimeout(timer);
-  }, [map, isMapReady, currentStep, journeyCoordinates]);
+    return () => clearInterval(interval);
+  }, []);
 
-  if (!isLoaded) {
-    return (
-      <div className="relative w-full h-full bg-gradient-to-br from-primary/5 to-primary/10 flex items-center justify-center">
-        <div className="text-muted-foreground">Loading map...</div>
-      </div>
-    );
-  }
-
-  const currentPosition = journeyCoordinates[currentStep];
-  const pathSoFar = journeyCoordinates.slice(0, currentStep + 1);
+  // Calculate current position based on progress
+  const startX = 20;
+  const startY = 70;
+  const endX = 80;
+  const endY = 30;
+  
+  const currentX = startX + (endX - startX) * (progress / 100);
+  const currentY = startY + (endY - startY) * (progress / 100);
 
   return (
-    <div className="relative w-full h-full">
-      <GoogleMap
-        mapContainerStyle={{ width: '100%', height: '100%' }}
-        center={startPoint}
-        zoom={13}
-        onLoad={onLoad}
-        onUnmount={onUnmount}
-        options={{
-          streetViewControl: false,
-          mapTypeControl: false,
-          fullscreenControl: false,
-        }}
+    <div className="relative w-full h-full bg-gradient-to-br from-muted/30 via-muted/10 to-background overflow-hidden">
+      {/* Grid pattern */}
+      <div className="absolute inset-0 opacity-20">
+        <div className="absolute inset-0" style={{
+          backgroundImage: `
+            linear-gradient(hsl(var(--border)) 1px, transparent 1px),
+            linear-gradient(90deg, hsl(var(--border)) 1px, transparent 1px)
+          `,
+          backgroundSize: '40px 40px'
+        }} />
+      </div>
+      
+      {/* Street lines */}
+      <svg className="absolute inset-0 w-full h-full opacity-20" xmlns="http://www.w3.org/2000/svg">
+        <line x1="0" y1="30%" x2="100%" y2="30%" stroke="hsl(var(--border))" strokeWidth="2" />
+        <line x1="0" y1="60%" x2="100%" y2="60%" stroke="hsl(var(--border))" strokeWidth="2" />
+        <line x1="20%" y1="0" x2="20%" y2="100%" stroke="hsl(var(--border))" strokeWidth="2" />
+        <line x1="50%" y1="0" x2="50%" y2="100%" stroke="hsl(var(--border))" strokeWidth="3" />
+        <line x1="80%" y1="0" x2="80%" y2="100%" stroke="hsl(var(--border))" strokeWidth="2" />
+      </svg>
+
+      {/* Route path */}
+      <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="routeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#1A73E8" stopOpacity="0.3" />
+            <stop offset={`${progress}%`} stopColor="#1A73E8" stopOpacity="0.8" />
+            <stop offset={`${progress}%`} stopColor="transparent" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        
+        {/* Full route (faded) */}
+        <line 
+          x1={`${startX}%`} 
+          y1={`${startY}%`} 
+          x2={`${endX}%`} 
+          y2={`${endY}%`} 
+          stroke="hsl(var(--primary))" 
+          strokeWidth="2" 
+          strokeOpacity="0.2"
+          strokeDasharray="5,5"
+        />
+        
+        {/* Animated route (colored) */}
+        <line 
+          x1={`${startX}%`} 
+          y1={`${startY}%`} 
+          x2={`${currentX}%`} 
+          y2={`${currentY}%`} 
+          stroke="#1A73E8" 
+          strokeWidth="4" 
+          strokeOpacity="0.8"
+          strokeLinecap="round"
+        />
+      </svg>
+
+      {/* Start marker */}
+      <div 
+        className="absolute z-10 transition-all duration-300"
+        style={{ left: `${startX}%`, top: `${startY}%`, transform: 'translate(-50%, -100%)' }}
       >
-        {/* Only render map elements after map is ready */}
-        {isMapReady && (
-          <>
-            {/* Animated route line */}
-            {pathSoFar.length > 1 && (
-              <Polyline
-                path={pathSoFar}
-                options={{
-                  strokeColor: "#1A73E8",
-                  strokeOpacity: 0.8,
-                  strokeWeight: 4,
-                }}
-              />
-            )}
+        <div className="relative">
+          <div className="bg-success text-success-foreground rounded-full p-2 shadow-lg">
+            <Navigation className="w-5 h-5 fill-current" />
+          </div>
+          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-success/30 rounded-full blur-sm" />
+        </div>
+      </div>
 
-            {/* Start marker */}
-            <Marker
-              position={startPoint}
-              icon={{
-                path: google.maps.SymbolPath.CIRCLE,
-                scale: 8,
-                fillColor: "#34A853",
-                fillOpacity: 1,
-                strokeColor: "#ffffff",
-                strokeWeight: 2,
-              }}
-            />
+      {/* Current position marker */}
+      <div 
+        className="absolute z-10 transition-all duration-1000"
+        style={{ left: `${currentX}%`, top: `${currentY}%`, transform: 'translate(-50%, -50%)' }}
+      >
+        <div className="relative">
+          {/* Pulsing circle animation */}
+          <div className="absolute inset-0 -m-3">
+            <div className="w-12 h-12 rounded-full bg-primary/20 animate-ping" />
+          </div>
+          <div className="absolute inset-0 -m-1">
+            <div className="w-8 h-8 rounded-full bg-primary/30" />
+          </div>
+          
+          {/* Main marker */}
+          <div className="relative bg-primary text-primary-foreground rounded-full p-2 shadow-float">
+            <div className="w-4 h-4 rounded-full bg-current" />
+          </div>
+        </div>
+      </div>
 
-            {/* Current position marker */}
-            <Marker
-              position={currentPosition}
-              icon={{
-                path: google.maps.SymbolPath.CIRCLE,
-                scale: 10,
-                fillColor: "#1A73E8",
-                fillOpacity: 1,
-                strokeColor: "#ffffff",
-                strokeWeight: 3,
-              }}
-            />
+      {/* Destination marker */}
+      <div 
+        className="absolute z-10"
+        style={{ left: `${endX}%`, top: `${endY}%`, transform: 'translate(-50%, -100%)' }}
+      >
+        <div className="relative">
+          <MapPin className="w-8 h-8 text-danger drop-shadow-lg fill-current" />
+          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-3 h-3 bg-danger/30 rounded-full blur-sm" />
+        </div>
+      </div>
 
-            {/* Destination marker */}
-            <Marker
-              position={endPoint}
-              label="📍"
-            />
-          </>
-        )}
-      </GoogleMap>
+      {/* Progress indicator */}
+      <div className="absolute bottom-4 left-4 bg-card/90 backdrop-blur-sm px-3 py-2 rounded-lg shadow-lg border border-border">
+        <div className="text-xs text-muted-foreground">Journey Progress</div>
+        <div className="text-sm font-semibold">{progress}%</div>
+      </div>
     </div>
   );
 };
