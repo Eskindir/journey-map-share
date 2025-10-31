@@ -1,156 +1,86 @@
-import { useEffect, useRef, useState } from "react";
-import mapboxgl from "mapbox-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
+import { useEffect, useState, useCallback } from "react";
+import { GoogleMap, useJsApiLoader, Polyline, Marker } from "@react-google-maps/api";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 
 const MapView = () => {
-  const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
-  const [mapboxToken, setMapboxToken] = useState("");
+  const [googleMapsApiKey, setGoogleMapsApiKey] = useState("");
   const [tokenSaved, setTokenSaved] = useState(false);
+  const [map, setMap] = useState<google.maps.Map | null>(null);
+  const [currentStep, setCurrentStep] = useState(0);
 
+  const { isLoaded } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: tokenSaved ? googleMapsApiKey : "",
+  });
+
+  // Journey coordinates (simulating a route)
+  const startPoint = { lat: 37.7749, lng: -122.4194 }; // San Francisco
+  const endPoint = { lat: 37.7849, lng: -122.4094 };
+  
+  // Create intermediate points for the journey
+  const totalSteps = 20;
+  const journeyCoordinates: google.maps.LatLngLiteral[] = [];
+  for (let i = 0; i <= totalSteps; i++) {
+    const progress = i / totalSteps;
+    journeyCoordinates.push({
+      lat: startPoint.lat + (endPoint.lat - startPoint.lat) * progress,
+      lng: startPoint.lng + (endPoint.lng - startPoint.lng) * progress
+    });
+  }
+
+  const onLoad = useCallback((map: google.maps.Map) => {
+    setMap(map);
+  }, []);
+
+  const onUnmount = useCallback(() => {
+    setMap(null);
+  }, []);
+
+  // Animate the route
   useEffect(() => {
-    if (!mapContainer.current || !tokenSaved || !mapboxToken) return;
+    if (!map || currentStep >= journeyCoordinates.length - 1) return;
 
-    mapboxgl.accessToken = mapboxToken;
+    const timer = setTimeout(() => {
+      setCurrentStep(prev => prev + 1);
+      
+      // Pan map to follow current position
+      if (journeyCoordinates[currentStep + 1]) {
+        map.panTo(journeyCoordinates[currentStep + 1]);
+      }
+    }, 2000);
 
-    // Journey coordinates (simulating a route)
-    const startPoint: [number, number] = [-122.4194, 37.7749]; // San Francisco
-    const endPoint: [number, number] = [-122.4094, 37.7849];
-    
-    // Create intermediate points for the journey
-    const totalSteps = 20;
-    const journeyCoordinates: [number, number][] = [];
-    for (let i = 0; i <= totalSteps; i++) {
-      const progress = i / totalSteps;
-      journeyCoordinates.push([
-        startPoint[0] + (endPoint[0] - startPoint[0]) * progress,
-        startPoint[1] + (endPoint[1] - startPoint[1]) * progress
-      ]);
-    }
-
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: "mapbox://styles/mapbox/streets-v12",
-      center: startPoint,
-      zoom: 13,
-    });
-
-    // Add navigation controls
-    map.current.addControl(new mapboxgl.NavigationControl(), "top-right");
-
-    let currentStep = 0;
-
-    map.current.on("load", () => {
-      if (!map.current) return;
-
-      // Add the route source
-      map.current.addSource("route", {
-        type: "geojson",
-        data: {
-          type: "Feature",
-          properties: {},
-          geometry: {
-            type: "LineString",
-            coordinates: [journeyCoordinates[0]]
-          }
-        }
-      });
-
-      // Add the route layer
-      map.current.addLayer({
-        id: "route",
-        type: "line",
-        source: "route",
-        layout: {
-          "line-join": "round",
-          "line-cap": "round"
-        },
-        paint: {
-          "line-color": "#1A73E8",
-          "line-width": 4,
-          "line-opacity": 0.8
-        }
-      });
-
-      // Add start marker
-      new mapboxgl.Marker({ color: "#34A853" })
-        .setLngLat(startPoint)
-        .addTo(map.current);
-
-      // Add current position marker
-      const currentMarker = new mapboxgl.Marker({ color: "#1A73E8" })
-        .setLngLat(startPoint)
-        .addTo(map.current);
-
-      // Animate the route line
-      const animateRoute = () => {
-        if (!map.current || currentStep >= journeyCoordinates.length) return;
-
-        currentStep++;
-        const currentCoordinates = journeyCoordinates.slice(0, currentStep + 1);
-
-        const source = map.current.getSource("route") as mapboxgl.GeoJSONSource;
-        if (source) {
-          source.setData({
-            type: "Feature",
-            properties: {},
-            geometry: {
-              type: "LineString",
-              coordinates: currentCoordinates
-            }
-          });
-        }
-
-        // Update current position marker
-        currentMarker.setLngLat(journeyCoordinates[currentStep]);
-
-        // Pan map to follow current position
-        map.current.panTo(journeyCoordinates[currentStep]);
-
-        if (currentStep < journeyCoordinates.length - 1) {
-          setTimeout(animateRoute, 2000); // Update every 2 seconds
-        }
-      };
-
-      // Start animation after 1 second
-      setTimeout(animateRoute, 1000);
-    });
-
-    return () => {
-      map.current?.remove();
-    };
-  }, [mapboxToken, tokenSaved]);
+    return () => clearTimeout(timer);
+  }, [map, currentStep, journeyCoordinates]);
 
   if (!tokenSaved) {
     return (
       <div className="relative w-full h-full bg-gradient-to-br from-primary/5 to-primary/10 flex items-center justify-center p-6">
         <div className="bg-card p-6 rounded-lg shadow-lg max-w-md w-full space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="mapbox-token">Mapbox Public Token</Label>
+            <Label htmlFor="google-maps-key">Google Maps API Key</Label>
             <Input
-              id="mapbox-token"
+              id="google-maps-key"
               type="text"
-              placeholder="pk.eyJ1..."
-              value={mapboxToken}
-              onChange={(e) => setMapboxToken(e.target.value)}
+              placeholder="AIza..."
+              value={googleMapsApiKey}
+              onChange={(e) => setGoogleMapsApiKey(e.target.value)}
             />
           </div>
           <p className="text-sm text-muted-foreground">
-            Get your token from{" "}
+            Get your API key from{" "}
             <a
-              href="https://mapbox.com/"
+              href="https://console.cloud.google.com/google/maps-apis"
               target="_blank"
               rel="noopener noreferrer"
               className="text-primary underline"
             >
-              mapbox.com
+              Google Cloud Console
             </a>
           </p>
           <button
             onClick={() => setTokenSaved(true)}
-            disabled={!mapboxToken}
+            disabled={!googleMapsApiKey}
             className="w-full bg-primary text-primary-foreground py-2 rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Load Map
@@ -160,9 +90,75 @@ const MapView = () => {
     );
   }
 
+  if (!isLoaded) {
+    return (
+      <div className="relative w-full h-full bg-gradient-to-br from-primary/5 to-primary/10 flex items-center justify-center">
+        <div className="text-muted-foreground">Loading map...</div>
+      </div>
+    );
+  }
+
+  const currentPosition = journeyCoordinates[currentStep];
+  const pathSoFar = journeyCoordinates.slice(0, currentStep + 1);
+
   return (
     <div className="relative w-full h-full">
-      <div ref={mapContainer} className="absolute inset-0" />
+      <GoogleMap
+        mapContainerStyle={{ width: '100%', height: '100%' }}
+        center={startPoint}
+        zoom={13}
+        onLoad={onLoad}
+        onUnmount={onUnmount}
+        options={{
+          streetViewControl: false,
+          mapTypeControl: false,
+          fullscreenControl: false,
+        }}
+      >
+        {/* Animated route line */}
+        {pathSoFar.length > 1 && (
+          <Polyline
+            path={pathSoFar}
+            options={{
+              strokeColor: "#1A73E8",
+              strokeOpacity: 0.8,
+              strokeWeight: 4,
+            }}
+          />
+        )}
+
+        {/* Start marker */}
+        <Marker
+          position={startPoint}
+          icon={{
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 8,
+            fillColor: "#34A853",
+            fillOpacity: 1,
+            strokeColor: "#ffffff",
+            strokeWeight: 2,
+          }}
+        />
+
+        {/* Current position marker */}
+        <Marker
+          position={currentPosition}
+          icon={{
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillColor: "#1A73E8",
+            fillOpacity: 1,
+            strokeColor: "#ffffff",
+            strokeWeight: 3,
+          }}
+        />
+
+        {/* Destination marker */}
+        <Marker
+          position={endPoint}
+          label="📍"
+        />
+      </GoogleMap>
     </div>
   );
 };
