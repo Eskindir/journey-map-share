@@ -3,9 +3,10 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Star, MapPin, Navigation, Clock, AlertTriangle } from "lucide-react";
+import { Star, MapPin, Navigation, Clock, AlertTriangle, Phone, MessageSquare, Car } from "lucide-react";
 import MapView from "@/components/MapView";
 import AlertBanner from "@/components/AlertBanner";
+import driverPhoto from "@/assets/driver-photo.jpg";
 
 const TrackRide = () => {
   const navigate = useNavigate();
@@ -71,55 +72,74 @@ const TrackRide = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="min-h-screen bg-background relative">
       {/* Alert Banners */}
-      {alerts.map((alert, index) => (
-        <AlertBanner key={index} message={alert} variant="warning" />
-      ))}
+      <div className="absolute top-0 left-0 right-0 z-20">
+        {alerts.map((alert, index) => (
+          <AlertBanner key={index} message={alert} variant="warning" />
+        ))}
+      </div>
 
-      {/* Header */}
-      <header className="bg-card border-b border-border p-4">
-        <h1 className="text-xl font-semibold text-center">Tracking Ride</h1>
-      </header>
-
-      {/* Map Area */}
-      <div className="h-80 relative">
+      {/* Map - Full Screen */}
+      <div className="absolute inset-0">
         <MapView />
       </div>
 
-      {/* Info Card - Fixed at bottom */}
-      <Card className="flex-1 rounded-t-2xl -mt-6 relative z-10 border-t">
-        <CardContent className="p-6 space-y-4">
+      {/* Info Card - Desktop: Top Right, Mobile: Bottom */}
+      <Card className="absolute md:top-4 md:right-4 bottom-0 left-0 right-0 md:left-auto md:bottom-auto md:w-96 md:max-h-[calc(100vh-2rem)] overflow-y-auto z-10 md:rounded-lg rounded-t-2xl md:rounded-b-lg border-t md:border shadow-2xl">
+        <CardContent className="p-4 space-y-4">
           {/* Driver Info */}
-          <div className="flex items-start gap-4 pb-4 border-b border-border">
-            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center overflow-hidden">
-              <img 
-                src="/placeholder.svg" 
-                alt="Driver" 
-                className="w-full h-full object-cover"
-              />
+          <div className="flex items-start gap-3 pb-4 border-b border-border">
+            <div className="relative">
+              <div className="w-16 h-16 rounded-full bg-muted overflow-hidden ring-2 ring-border">
+                <img 
+                  src={driverPhoto}
+                  alt="Driver" 
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="absolute -bottom-1 -right-1 bg-success text-success-foreground rounded-full p-1">
+                <Star className="h-3 w-3 fill-current" />
+              </div>
             </div>
-            <div className="flex-1">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold text-lg">John Driver</h3>
-                  <p className="text-sm text-muted-foreground">ABC-1234</p>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-semibold text-base">John Driver</h3>
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                    <Star className="h-3 w-3 fill-warning text-warning" />
+                    <span className="font-medium">4.8</span>
+                    <span>• 328 rides</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <Star className="h-4 w-4 fill-warning text-warning" />
-                  <span className="font-medium">4.8</span>
+                <div className="flex gap-1">
+                  <Button size="icon" variant="outline" className="h-8 w-8">
+                    <Phone className="h-4 w-4" />
+                  </Button>
+                  <Button size="icon" variant="outline" className="h-8 w-8">
+                    <MessageSquare className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              
+              {/* Car Info */}
+              <div className="mt-2 flex items-center gap-2 text-xs bg-muted rounded-md p-2">
+                <Car className="h-3.5 w-3.5 text-muted-foreground" />
+                <div className="flex-1 min-w-0">
+                  <span className="font-medium">Toyota Camry</span>
+                  <span className="text-muted-foreground"> • ABC-1234</span>
                 </div>
               </div>
             </div>
           </div>
 
           {/* ETA Countdown */}
-          <div className="flex items-center justify-between py-3 px-4 bg-muted rounded-lg">
+          <div className="flex items-center justify-between py-2.5 px-3 bg-primary/5 rounded-lg border border-primary/20">
             <div className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-primary" />
-              <span className="font-medium">ETA</span>
+              <Clock className="h-4 w-4 text-primary" />
+              <span className="font-medium text-sm">ETA</span>
             </div>
-            <span className="text-xl font-bold">{timeRemaining} min</span>
+            <span className="text-lg font-bold text-primary">{timeRemaining} min</span>
           </div>
 
           {/* Ride Status */}
@@ -131,32 +151,37 @@ const TrackRide = () => {
           </div>
 
           {/* Pickup & Drop-off */}
-          <div className="space-y-3 pt-2">
-            <div className="flex gap-3">
-              <div className="mt-1">
-                <Navigation className="h-4 w-4 text-success" />
+          <div className="space-y-2.5">
+            <div className="flex gap-2.5">
+              <div className="mt-0.5">
+                <div className="w-2 h-2 rounded-full bg-success ring-2 ring-success/20" />
               </div>
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <p className="text-xs text-muted-foreground">Pickup</p>
-                <p className="text-sm font-medium line-clamp-1">{from}</p>
+                <p className="text-sm font-medium line-clamp-2">{from}</p>
               </div>
             </div>
-            <div className="flex gap-3">
-              <div className="mt-1">
-                <MapPin className="h-4 w-4 text-danger" />
+            
+            <div className="flex gap-2.5 ml-1">
+              <div className="w-0.5 h-6 bg-border" />
+            </div>
+            
+            <div className="flex gap-2.5">
+              <div className="mt-0.5">
+                <MapPin className="h-4 w-4 text-danger fill-current" />
               </div>
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <p className="text-xs text-muted-foreground">Drop-off</p>
-                <p className="text-sm font-medium line-clamp-1">{to}</p>
+                <p className="text-sm font-medium line-clamp-2">{to}</p>
               </div>
             </div>
           </div>
 
           {/* Alerts Badge */}
           {alerts.length > 0 && (
-            <div className="flex items-center gap-2 p-3 bg-warning/10 border border-warning/20 rounded-lg">
+            <div className="flex items-center gap-2 p-2.5 bg-warning/10 border border-warning/20 rounded-lg">
               <AlertTriangle className="h-4 w-4 text-warning" />
-              <span className="text-sm font-medium text-warning-foreground">{alerts[0]}</span>
+              <span className="text-xs font-medium text-warning-foreground">{alerts[0]}</span>
             </div>
           )}
         </CardContent>
