@@ -159,12 +159,6 @@ const TrackRide = () => {
               <span className="text-sm font-medium text-warning-foreground">{alerts[0]}</span>
             </div>
           )}
-
-          {/* Actions */}
-          <div className="flex gap-3 pt-2">
-            <Button variant="outline" className="flex-1">Report Issue</Button>
-            <Button variant="destructive" className="flex-1">Emergency SOS</Button>
-          </div>
         </CardContent>
       </Card>
     </div>
