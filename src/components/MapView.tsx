@@ -1,17 +1,15 @@
 import { useEffect, useState, useCallback } from "react";
 import { GoogleMap, useJsApiLoader, Polyline, Marker } from "@react-google-maps/api";
-import { Input } from "./ui/input";
-import { Label } from "./ui/label";
+
+const GOOGLE_MAPS_API_KEY = "AIzaSyDABp7Bg9ODZSE3oFcJ5LpdBz2wLqP7PRg";
 
 const MapView = () => {
-  const [googleMapsApiKey, setGoogleMapsApiKey] = useState("");
-  const [tokenSaved, setTokenSaved] = useState(false);
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
 
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
-    googleMapsApiKey: tokenSaved ? googleMapsApiKey : "",
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
   });
 
   // Journey coordinates (simulating a route)
@@ -52,43 +50,6 @@ const MapView = () => {
 
     return () => clearTimeout(timer);
   }, [map, currentStep, journeyCoordinates]);
-
-  if (!tokenSaved) {
-    return (
-      <div className="relative w-full h-full bg-gradient-to-br from-primary/5 to-primary/10 flex items-center justify-center p-6">
-        <div className="bg-card p-6 rounded-lg shadow-lg max-w-md w-full space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="google-maps-key">Google Maps API Key</Label>
-            <Input
-              id="google-maps-key"
-              type="text"
-              placeholder="AIza..."
-              value={googleMapsApiKey}
-              onChange={(e) => setGoogleMapsApiKey(e.target.value)}
-            />
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Get your API key from{" "}
-            <a
-              href="https://console.cloud.google.com/google/maps-apis"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary underline"
-            >
-              Google Cloud Console
-            </a>
-          </p>
-          <button
-            onClick={() => setTokenSaved(true)}
-            disabled={!googleMapsApiKey}
-            className="w-full bg-primary text-primary-foreground py-2 rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Load Map
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   if (!isLoaded) {
     return (
