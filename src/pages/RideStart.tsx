@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Navigation, User, X } from "lucide-react";
+import { MapPin, Navigation, User, X, Bell } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
 const RideStart = () => {
@@ -185,6 +185,18 @@ const RideStart = () => {
         <p className="text-xs text-muted-foreground text-center px-4">
           Your phone will open the SMS app to complete the share.
         </p>
+
+        {/* Test Notifications Link */}
+        <div className="pt-4 border-t border-border">
+          <Button 
+            variant="outline" 
+            className="w-full"
+            onClick={() => navigate('/notifications')}
+          >
+            <Bell className="h-4 w-4 mr-2" />
+            Test Notification Settings
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -8,6 +8,8 @@ import { Star, MapPin, Navigation, Clock, AlertTriangle, Phone, MessageSquare, C
 import MapView from "@/components/MapView";
 import AlertBanner from "@/components/AlertBanner";
 import driverPhoto from "@/assets/driver-photo.jpg";
+import { notificationService } from "@/lib/notifications";
+import { useToast } from "@/hooks/use-toast";
 
 const TrackRide = () => {
   const navigate = useNavigate();
@@ -17,6 +19,7 @@ const TrackRide = () => {
   const [alerts, setAlerts] = useState<string[]>([]);
   const [sosValue, setSosValue] = useState([0]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const { toast } = useToast();
 
   const from = searchParams.get('from') || 'Current Location';
   const to = searchParams.get('to') || 'Destination';
@@ -58,6 +61,11 @@ const TrackRide = () => {
       
       if (randomStatus === "deviated") {
         setAlerts(["Route deviation detected"]);
+        // Trigger route deviation notification
+        notificationService.showNotification('route-deviation', 'Your driver has deviated from the planned route.');
+      } else if (randomStatus === "delayed") {
+        // Trigger delay notification
+        notificationService.showNotification('delay', 'Your ride is delayed by 5 minutes due to traffic.');
       }
     }, 10000);
 
@@ -87,10 +95,20 @@ const TrackRide = () => {
     }
   };
 
-  const handleSosChange = (value: number[]) => {
+  const handleSosChange = async (value: number[]) => {
     setSosValue(value);
     if (value[0] >= 95) {
       setAlerts(["Emergency SOS activated! Help is on the way."]);
+      
+      // Trigger SOS notification
+      await notificationService.showNotification('sos', 'EMERGENCY! Your location has been shared with emergency contacts and authorities.');
+      
+      toast({
+        title: "🚨 Emergency SOS Activated",
+        description: "Help is on the way!",
+        variant: "destructive",
+      });
+      
       // Reset after activation
       setTimeout(() => setSosValue([0]), 1000);
     }
