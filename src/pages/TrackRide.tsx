@@ -16,10 +16,24 @@ const TrackRide = () => {
   const [rideStatus, setRideStatus] = useState<"on-time" | "delayed" | "deviated" | "paused">("on-time");
   const [alerts, setAlerts] = useState<string[]>([]);
   const [sosValue, setSosValue] = useState([0]);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   const from = searchParams.get('from') || 'Current Location';
   const to = searchParams.get('to') || 'Destination';
   const eta = parseInt(searchParams.get('eta') || '20');
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     setTimeRemaining(eta);
@@ -86,6 +100,9 @@ const TrackRide = () => {
     <div className="min-h-screen bg-background relative">
       {/* Alert Banners */}
       <div className="absolute top-0 left-0 right-0 z-20">
+        {!isOnline && (
+          <AlertBanner message="⚠️ NO NETWORK CONNECTION - Location tracking unavailable" variant="warning" />
+        )}
         {alerts.map((alert, index) => (
           <AlertBanner key={index} message={alert} variant="warning" />
         ))}
