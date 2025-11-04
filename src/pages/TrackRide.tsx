@@ -3,7 +3,8 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Star, MapPin, Navigation, Clock, AlertTriangle, Phone, MessageSquare, Car } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
+import { Star, MapPin, Navigation, Clock, AlertTriangle, Phone, MessageSquare, Car, ShieldAlert } from "lucide-react";
 import MapView from "@/components/MapView";
 import AlertBanner from "@/components/AlertBanner";
 import driverPhoto from "@/assets/driver-photo.jpg";
@@ -14,6 +15,7 @@ const TrackRide = () => {
   const [timeRemaining, setTimeRemaining] = useState(20);
   const [rideStatus, setRideStatus] = useState<"on-time" | "delayed" | "deviated" | "paused">("on-time");
   const [alerts, setAlerts] = useState<string[]>([]);
+  const [sosValue, setSosValue] = useState([0]);
 
   const from = searchParams.get('from') || 'Current Location';
   const to = searchParams.get('to') || 'Destination';
@@ -68,6 +70,15 @@ const TrackRide = () => {
       case "deviated": return "Route Changed";
       case "paused": return "Stopped";
       default: return "Unknown";
+    }
+  };
+
+  const handleSosChange = (value: number[]) => {
+    setSosValue(value);
+    if (value[0] >= 95) {
+      setAlerts(["Emergency SOS activated! Help is on the way."]);
+      // Reset after activation
+      setTimeout(() => setSosValue([0]), 1000);
     }
   };
 
@@ -184,6 +195,29 @@ const TrackRide = () => {
               <span className="text-xs font-medium text-warning-foreground">{alerts[0]}</span>
             </div>
           )}
+
+          {/* SOS Slider */}
+          <div className="space-y-2 pt-2 border-t border-border">
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="h-4 w-4 text-destructive" />
+              <span className="text-sm font-semibold text-destructive">Emergency SOS</span>
+            </div>
+            <div className="relative">
+              <Slider
+                value={sosValue}
+                onValueChange={handleSosChange}
+                max={100}
+                step={1}
+                className="cursor-pointer"
+              />
+              <div className="flex items-center justify-between mt-1.5">
+                <span className="text-xs text-muted-foreground">
+                  {sosValue[0] < 95 ? "Slide to activate" : "Activating..."}
+                </span>
+                <span className="text-xs font-medium text-destructive">{sosValue[0]}%</span>
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>
