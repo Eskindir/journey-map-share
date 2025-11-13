@@ -20,7 +20,8 @@ const RideStart = () => {
 
   // Check if Contact Picker API is supported
   useEffect(() => {
-    const hasContactPicker = 'contacts' in navigator && 'ContactsManager' in window;
+    const hasContactPicker =
+      "contacts" in navigator && "ContactsManager" in window;
     setSupportsContactPicker(hasContactPicker);
   }, []);
 
