@@ -16,6 +16,13 @@ const RideStart = () => {
   const [contacts, setContacts] = useState<string[]>([]);
   const [contactInput, setContactInput] = useState("");
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+  const [supportsContactPicker, setSupportsContactPicker] = useState(false);
+
+  // Check if Contact Picker API is supported
+  useEffect(() => {
+    const hasContactPicker = 'contacts' in navigator && 'ContactsManager' in window;
+    setSupportsContactPicker(hasContactPicker);
+  }, []);
 
   // Auto-detect location on mount and handle query string destination
   useEffect(() => {
@@ -94,51 +101,41 @@ const RideStart = () => {
   };
 
   const pickContact = async () => {
-    // Check if Contact Picker API is supported
-    if ("contacts" in navigator && "ContactsManager" in window) {
-      try {
-        const props = ["name", "tel"];
-        const opts = { multiple: true };
+    try {
+      const props = ["name", "tel"];
+      const opts = { multiple: true };
 
-        // @ts-ignore - ContactsManager is not in TypeScript types yet
-        const selectedContacts = await navigator.contacts.select(props, opts);
+      // @ts-ignore - ContactsManager is not in TypeScript types yet
+      const selectedContacts = await navigator.contacts.select(props, opts);
 
-        selectedContacts.forEach((contact: any) => {
-          if (contact.tel && contact.tel.length > 0) {
-            const phoneNumber = contact.tel[0];
-            const displayName =
-              contact.name && contact.name.length > 0
-                ? `${contact.name[0]} (${phoneNumber})`
-                : phoneNumber;
+      selectedContacts.forEach((contact: any) => {
+        if (contact.tel && contact.tel.length > 0) {
+          const phoneNumber = contact.tel[0];
+          const displayName =
+            contact.name && contact.name.length > 0
+              ? `${contact.name[0]} (${phoneNumber})`
+              : phoneNumber;
 
-            if (!contacts.includes(displayName)) {
-              setContacts((prev) => [...prev, displayName]);
-            }
+          if (!contacts.includes(displayName)) {
+            setContacts((prev) => [...prev, displayName]);
           }
-        });
-
-        if (selectedContacts.length > 0) {
-          toast({
-            title: "Contacts Added",
-            description: `${selectedContacts.length} contact(s) added successfully.`,
-          });
         }
-      } catch (error) {
-        if (error instanceof Error && error.name !== "AbortError") {
-          toast({
-            title: "Error",
-            description: "Unable to access contacts. Please enter manually.",
-            variant: "destructive",
-          });
-        }
-      }
-    } else {
-      toast({
-        title: "Not Supported",
-        description:
-          "Contact picker is not available on this device. Please enter contacts manually.",
-        variant: "destructive",
       });
+
+      if (selectedContacts.length > 0) {
+        toast({
+          title: "Contacts Added",
+          description: `${selectedContacts.length} contact(s) added successfully.`,
+        });
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name !== "AbortError") {
+        toast({
+          title: "Error",
+          description: "Unable to access contacts. Please try again.",
+          variant: "destructive",
+        });
+      }
     }
   };
 
@@ -266,33 +263,35 @@ const RideStart = () => {
         <div className="space-y-3">
           <Label className="text-base font-medium">Select Contacts</Label>
 
-          {/* Pick from phone contacts */}
-          <Button
-            onClick={pickContact}
-            variant="outline"
-            className="w-full"
-            type="button"
-          >
-            <User className="h-4 w-4 mr-2" />
-            Pick from Phone Contacts
-          </Button>
-
-          {/* Manual entry */}
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Or enter phone number manually"
-                value={contactInput}
-                onChange={(e) => setContactInput(e.target.value)}
-                onKeyPress={(e) => e.key === "Enter" && addContact()}
-                className="pl-9"
-              />
-            </div>
-            <Button onClick={addContact} variant="outline">
-              Add
+          {/* Show contact picker button only if supported */}
+          {supportsContactPicker ? (
+            <Button
+              onClick={pickContact}
+              variant="outline"
+              className="w-full"
+              type="button"
+            >
+              <User className="h-4 w-4 mr-2" />
+              Pick from Phone Contacts
             </Button>
-          </div>
+          ) : (
+            /* Show manual entry only if contact picker not supported */
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Enter phone number"
+                  value={contactInput}
+                  onChange={(e) => setContactInput(e.target.value)}
+                  onKeyPress={(e) => e.key === "Enter" && addContact()}
+                  className="pl-9"
+                />
+              </div>
+              <Button onClick={addContact} variant="outline">
+                Add
+              </Button>
+            </div>
+          )}
 
           {/* Contact List */}
           {contacts.length > 0 && (
