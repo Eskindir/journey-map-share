@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,23 +9,61 @@ import { toast } from "@/hooks/use-toast";
 
 const RideStart = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [currentLocation, setCurrentLocation] = useState("");
   const [destination, setDestination] = useState("");
   const [eta, setEta] = useState(20);
   const [contacts, setContacts] = useState<string[]>([]);
   const [contactInput, setContactInput] = useState("");
+  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
 
-  const detectLocation = () => {
+  // Auto-detect location on mount and handle query string destination
+  useEffect(() => {
+    // Check for destination in query string
+    const destinationParam = searchParams.get('destination') || searchParams.get('to');
+    if (destinationParam) {
+      setDestination(destinationParam);
+    }
+
+    // Auto-detect user's location
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           setCurrentLocation(`${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`);
+          setIsLoadingLocation(false);
+          toast({
+            title: "Location Detected",
+            description: "Your current location has been detected automatically.",
+          });
+        },
+        (error) => {
+          setIsLoadingLocation(false);
+          toast({
+            title: "Location Access Denied",
+            description: "Please enter your location manually.",
+            variant: "destructive",
+          });
+        }
+      );
+    } else {
+      setIsLoadingLocation(false);
+    }
+  }, [searchParams]);
+
+  const detectLocation = () => {
+    if (navigator.geolocation) {
+      setIsLoadingLocation(true);
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setCurrentLocation(`${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`);
+          setIsLoadingLocation(false);
           toast({
             title: "Location Detected",
             description: "Your current location has been detected successfully.",
           });
         },
         (error) => {
+          setIsLoadingLocation(false);
           toast({
             title: "Location Error",
             description: "Unable to detect your location. Please enter manually.",
@@ -40,6 +78,53 @@ const RideStart = () => {
     if (contactInput.trim() && !contacts.includes(contactInput.trim())) {
       setContacts([...contacts, contactInput.trim()]);
       setContactInput("");
+    }
+  };
+
+  const pickContact = async () => {
+    // Check if Contact Picker API is supported
+    if ('contacts' in navigator && 'ContactsManager' in window) {
+      try {
+        const props = ['name', 'tel'];
+        const opts = { multiple: true };
+        
+        // @ts-ignore - ContactsManager is not in TypeScript types yet
+        const selectedContacts = await navigator.contacts.select(props, opts);
+        
+        selectedContacts.forEach((contact: any) => {
+          if (contact.tel && contact.tel.length > 0) {
+            const phoneNumber = contact.tel[0];
+            const displayName = contact.name && contact.name.length > 0 
+              ? `${contact.name[0]} (${phoneNumber})` 
+              : phoneNumber;
+            
+            if (!contacts.includes(displayName)) {
+              setContacts(prev => [...prev, displayName]);
+            }
+          }
+        });
+
+        if (selectedContacts.length > 0) {
+          toast({
+            title: "Contacts Added",
+            description: `${selectedContacts.length} contact(s) added successfully.`,
+          });
+        }
+      } catch (error) {
+        if (error instanceof Error && error.name !== 'AbortError') {
+          toast({
+            title: "Error",
+            description: "Unable to access contacts. Please enter manually.",
+            variant: "destructive",
+          });
+        }
+      }
+    } else {
+      toast({
+        title: "Not Supported",
+        description: "Contact picker is not available on this device. Please enter contacts manually.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -93,14 +178,20 @@ const RideStart = () => {
               <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 id="location"
-                placeholder="Enter your location"
+                placeholder={isLoadingLocation ? "Detecting location..." : "Enter your location"}
                 value={currentLocation}
                 onChange={(e) => setCurrentLocation(e.target.value)}
                 className="pl-9"
+                disabled={isLoadingLocation}
               />
             </div>
-            <Button onClick={detectLocation} variant="outline" size="icon">
-              <Navigation className="h-4 w-4" />
+            <Button 
+              onClick={detectLocation} 
+              variant="outline" 
+              size="icon"
+              disabled={isLoadingLocation}
+            >
+              <Navigation className={`h-4 w-4 ${isLoadingLocation ? 'animate-pulse' : ''}`} />
             </Button>
           </div>
         </div>
@@ -140,11 +231,24 @@ const RideStart = () => {
         {/* Select Contacts */}
         <div className="space-y-3">
           <Label className="text-base font-medium">Select Contacts</Label>
+          
+          {/* Pick from phone contacts */}
+          <Button 
+            onClick={pickContact} 
+            variant="outline" 
+            className="w-full"
+            type="button"
+          >
+            <User className="h-4 w-4 mr-2" />
+            Pick from Phone Contacts
+          </Button>
+
+          {/* Manual entry */}
           <div className="flex gap-2">
             <div className="relative flex-1">
               <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Enter phone number or name"
+                placeholder="Or enter phone number manually"
                 value={contactInput}
                 onChange={(e) => setContactInput(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && addContact()}
