@@ -36,6 +36,9 @@ const TrackRide = () => {
   const from = searchParams.get("from") || "Current Location";
   const to = searchParams.get("to") || "Destination";
   const eta = parseInt(searchParams.get("eta") || "20");
+  const sendingTrackingInfo = searchParams.get("sendingTrackingInfo") === "true";
+  const trackingId = searchParams.get("trackingId") || searchParams.get("rideId") || "";
+  const driverId = searchParams.get("driverId") || "";
 
   // Parse driver info from query string
   const driverDataParam = searchParams.get("driverData");
@@ -81,6 +84,74 @@ const TrackRide = () => {
 
   const initialPosition = parseGPS(from);
   const destinationPosition = parseGPS(to);
+
+  // Send tracking info at intervals if enabled
+  useEffect(() => {
+    if (!sendingTrackingInfo || !trackingId || !driverId) {
+      console.log("Tracking info sending disabled or missing params:", {
+        sendingTrackingInfo,
+        trackingId,
+        driverId,
+      });
+      return;
+    }
+
+    const sendLocationUpdate = async () => {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            const payload = {
+              driverId: driverId,
+              trackinngId: trackingId, // Note: API has typo "trackinngId"
+              position: {
+                latitude: position.coords.latitude.toString(),
+                longitude: position.coords.longitude.toString(),
+              },
+            };
+
+            console.log("Sending location update:", payload);
+
+            try {
+              const response = await fetch(
+                `https://besecridetracking.azurewebsites.net/addgeolocationtoride/${trackingId}`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify(payload),
+                }
+              );
+
+              console.log("Location update response status:", response.status);
+              
+              const responseData = await response.json();
+              console.log("Location update response payload:", responseData);
+
+              if (response.ok) {
+                console.log("Location update sent successfully");
+              } else {
+                console.error("Failed to send location update:", response.status, responseData);
+              }
+            } catch (error) {
+              console.error("Error sending location update:", error);
+            }
+          },
+          (error) => {
+            console.error("Geolocation error:", error);
+          }
+        );
+      }
+    };
+
+    // Send immediately on mount
+    sendLocationUpdate();
+
+    // Then send every 15 seconds
+    const interval = setInterval(sendLocationUpdate, 15000);
+
+    return () => clearInterval(interval);
+  }, [sendingTrackingInfo, trackingId, driverId]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);

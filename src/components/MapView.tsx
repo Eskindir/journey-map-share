@@ -60,6 +60,14 @@ const MapView = ({
             options={mapOptions}
             onLoad={(map) => {
               mapRef.current = map;
+              
+              // Auto-fit bounds to show both markers
+              if (initialPosition && destinationPosition) {
+                const bounds = new google.maps.LatLngBounds();
+                bounds.extend({ lat: initialPosition.latitude, lng: initialPosition.longitude });
+                bounds.extend({ lat: destinationPosition.latitude, lng: destinationPosition.longitude });
+                map.fitBounds(bounds);
+              }
             }}
           >
             {/* Initial Position Marker */}
@@ -70,25 +78,10 @@ const MapView = ({
               }}
               icon={{
                 url: "http://maps.google.com/mapfiles/ms/icons/green-dot.png",
-                scaledSize: { width: 64, height: 64 },
+                scaledSize: { width: 32, height: 32 },
               }}
               title="Current Location"
             />
-
-            {/* Destination Marker (if provided) */}
-            {destinationPosition && (
-              <Marker
-                position={{
-                  lat: destinationPosition.latitude,
-                  lng: destinationPosition.longitude,
-                }}
-                icon={{
-                  url: "http://maps.google.com/mapfiles/ms/icons/red-dot.png",
-                  scaledSize: { width: 64, height: 64 },
-                }}
-                title="Destination"
-              />
-            )}
           </GoogleMap>
         </LoadScript>
       </div>

@@ -12,6 +12,8 @@ const RideStart = () => {
   const [searchParams] = useSearchParams();
   const [currentLocation, setCurrentLocation] = useState("");
   const [destination, setDestination] = useState("");
+  const [currentLocationAddress, setCurrentLocationAddress] = useState("");
+  const [destinationAddress, setDestinationAddress] = useState("");
   const [eta, setEta] = useState(20);
   const [contacts, setContacts] = useState<string[]>([]);
   const [contactInput, setContactInput] = useState("");
@@ -30,13 +32,60 @@ const RideStart = () => {
     setSupportsContactPicker(hasContactPicker);
   }, []);
 
+  // Parse GPS coordinates helper function
+  const parseGPSCoordinates = (gpsString: string) => {
+    const parts = gpsString.split(",").map((s) => s.trim());
+    if (parts.length === 2) {
+      const lat = parseFloat(parts[0]);
+      const lon = parseFloat(parts[1]);
+      if (!isNaN(lat) && !isNaN(lon)) {
+        return {
+          latitude: lat,
+          longitude: lon,
+        };
+      }
+    }
+    return null;
+  };
+
+  // Reverse geocode coordinates to get address
+  const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
+    try {
+      console.log(`Reverse geocoding: ${lat}, ${lon}`);
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&key=AIzaSyDABp7Bg9ODZSE3oFcJ5LpdBz2wLqP7PRg`
+      );
+      const data = await response.json();
+      console.log("Geocoding response:", data);
+      if (data.results && data.results.length > 0) {
+        const address = data.results[0].formatted_address;
+        console.log("Address found:", address);
+        return address;
+      }
+      return `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+    } catch (error) {
+      console.error("Geocoding error:", error);
+      return `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+    }
+  };
+
   // Auto-detect location on mount and handle query string destination
   useEffect(() => {
     // Check for destination in query string
     const destinationParam =
       searchParams.get("destination") || searchParams.get("to");
     if (destinationParam) {
+      console.log("Destination param:", destinationParam);
       setDestination(destinationParam);
+      // Reverse geocode destination if it's coordinates
+      const coords = parseGPSCoordinates(destinationParam);
+      console.log("Parsed destination coords:", coords);
+      if (coords) {
+        reverseGeocode(coords.latitude, coords.longitude).then((address) => {
+          console.log("Setting destination address:", address);
+          setDestinationAddress(address);
+        });
+      }
     }
 
     // Check for driverId in query string
@@ -66,17 +115,23 @@ const RideStart = () => {
     // Auto-detect user's location
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setCurrentLocation(
-            `${position.coords.latitude.toFixed(
-              4
-            )}, ${position.coords.longitude.toFixed(4)}`
+        async (position) => {
+          const coordsString = `${position.coords.latitude.toFixed(
+            4
+          )}, ${position.coords.longitude.toFixed(4)}`;
+          setCurrentLocation(coordsString);
+
+          // Get address for current location
+          const address = await reverseGeocode(
+            position.coords.latitude,
+            position.coords.longitude
           );
+          setCurrentLocationAddress(address);
           setIsLoadingLocation(false);
+
           toast({
             title: "Location Detected",
-            description:
-              "Your current location has been detected automatically.",
+            description: address,
           });
         },
         (error) => {
@@ -97,17 +152,23 @@ const RideStart = () => {
     if (navigator.geolocation) {
       setIsLoadingLocation(true);
       navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setCurrentLocation(
-            `${position.coords.latitude.toFixed(
-              4
-            )}, ${position.coords.longitude.toFixed(4)}`
+        async (position) => {
+          const coordsString = `${position.coords.latitude.toFixed(
+            4
+          )}, ${position.coords.longitude.toFixed(4)}`;
+          setCurrentLocation(coordsString);
+
+          // Get address for current location
+          const address = await reverseGeocode(
+            position.coords.latitude,
+            position.coords.longitude
           );
+          setCurrentLocationAddress(address);
           setIsLoadingLocation(false);
+
           toast({
             title: "Location Detected",
-            description:
-              "Your current location has been detected successfully.",
+            description: address,
           });
         },
         (error) => {
@@ -171,17 +232,6 @@ const RideStart = () => {
 
   const removeContact = (contact: string) => {
     setContacts(contacts.filter((c) => c !== contact));
-  };
-
-  const parseGPSCoordinates = (gpsString: string) => {
-    const parts = gpsString.split(",").map((s) => s.trim());
-    if (parts.length === 2) {
-      return {
-        latitude: parseFloat(parts[0]),
-        longitude: parseFloat(parts[1]),
-      };
-    }
-    return null;
   };
 
   const shareRide = async () => {
@@ -378,6 +428,11 @@ const RideStart = () => {
               />
             </Button>
           </div>
+          {currentLocationAddress && (
+            <p className="text-sm text-muted-foreground pl-1">
+              {currentLocationAddress}
+            </p>
+          )}
         </div>
 
         {/* Destination */}
@@ -395,6 +450,11 @@ const RideStart = () => {
               className="pl-9"
             />
           </div>
+          {destinationAddress && (
+            <p className="text-sm text-muted-foreground pl-1">
+              {destinationAddress}
+            </p>
+          )}
         </div>
 
         {/* Driver ID (readonly if from query string) */}
