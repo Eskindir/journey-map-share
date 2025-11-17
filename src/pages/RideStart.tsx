@@ -17,6 +17,11 @@ const RideStart = () => {
   const [contactInput, setContactInput] = useState("");
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
   const [supportsContactPicker, setSupportsContactPicker] = useState(false);
+  const [driverId, setDriverId] = useState("");
+  const [deviceCode, setDeviceCode] = useState("");
+  const [rideId, setRideId] = useState("");
+  const [plateNumber, setPlateNumber] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Check if Contact Picker API is supported
   useEffect(() => {
@@ -32,6 +37,30 @@ const RideStart = () => {
       searchParams.get("destination") || searchParams.get("to");
     if (destinationParam) {
       setDestination(destinationParam);
+    }
+
+    // Check for driverId in query string
+    const driverIdParam = searchParams.get("driverId");
+    if (driverIdParam) {
+      setDriverId(driverIdParam);
+    }
+
+    // Check for deviceCode in query string
+    const deviceCodeParam = searchParams.get("deviceCode");
+    if (deviceCodeParam) {
+      setDeviceCode(deviceCodeParam);
+    }
+
+    // Check for rideId in query string
+    const rideIdParam = searchParams.get("rideId");
+    if (rideIdParam) {
+      setRideId(rideIdParam);
+    }
+
+    // Check for plateNumber in query string
+    const plateNumberParam = searchParams.get("plateNumber");
+    if (plateNumberParam) {
+      setPlateNumber(plateNumberParam);
     }
 
     // Auto-detect user's location
@@ -144,7 +173,18 @@ const RideStart = () => {
     setContacts(contacts.filter((c) => c !== contact));
   };
 
-  const shareRide = () => {
+  const parseGPSCoordinates = (gpsString: string) => {
+    const parts = gpsString.split(",").map((s) => s.trim());
+    if (parts.length === 2) {
+      return {
+        latitude: parseFloat(parts[0]),
+        longitude: parseFloat(parts[1]),
+      };
+    }
+    return null;
+  };
+
+  const shareRide = async () => {
     if (!currentLocation || !destination) {
       toast({
         title: "Missing Information",
@@ -163,19 +203,135 @@ const RideStart = () => {
       return;
     }
 
-    const message = `I'm taking a ride! Track me here: ${
-      window.location.origin
-    }/track?from=${encodeURIComponent(currentLocation)}&to=${encodeURIComponent(
-      destination
-    )}&eta=${eta}`;
-    const smsBody = encodeURIComponent(message);
-    const phoneNumbers = contacts.join(",");
+    // Parse GPS coordinates
+    const initialPosition = parseGPSCoordinates(currentLocation);
+    const destinationPosition = parseGPSCoordinates(destination);
 
-    // Navigate to tracking page
-    navigate("/track");
+    if (!initialPosition || !destinationPosition) {
+      toast({
+        title: "Invalid Coordinates",
+        description: "Please ensure locations are in lat,lon format.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-    // Try to open SMS app (may not work in all browsers)
-    window.location.href = `sms:${phoneNumbers}?body=${smsBody}`;
+    setIsSubmitting(true);
+
+    try {
+      // Generate a new GUID for rideId if not provided
+      const generateGuid = () => {
+        return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+          const r = (Math.random() * 16) | 0;
+          const v = c === "x" ? r : (r & 0x3) | 0x8;
+          return v.toString(16);
+        });
+      };
+
+      const newRideId = rideId || generateGuid();
+
+      // Use driverId as deviceCode if deviceCode is not provided
+      const finalDeviceCode = deviceCode || driverId || "UNKNOWN";
+
+      // Prepare API payload
+      const payload = {
+        deviceCode: finalDeviceCode,
+        rideId: newRideId,
+        trackingRecipients: contacts.join(","),
+        initialPosition,
+        destinationPosition,
+        isRideActive: true,
+        driverIdFromDispatchService: finalDeviceCode,
+        driverPlateNumber: plateNumber || "N/A",
+        modelType: "Besec.Tracking.Models.TrackingRequest",
+      };
+
+      // Log payload to console
+      console.log(
+        "Initiating tracking with payload:",
+        JSON.stringify(payload, null, 2)
+      );
+
+      // Call API
+      const response = await fetch(
+        "https://besecridetracking.azurewebsites.net/initiate-tracking",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log("=== API RESPONSE ===");
+      console.log("Full response:", result);
+      console.log("JSON:", JSON.stringify(result, null, 2));
+      console.log("==================");
+
+      toast({
+        title: "Tracking Started",
+        description: "Your ride tracking has been initiated successfully.",
+      });
+
+      // Extract driver info from response
+      const driverInfo = result.DriverInfo;
+      const driverData = driverInfo
+        ? {
+            firstName: driverInfo.FirstName,
+            lastName: driverInfo.LastName,
+            rating: driverInfo.Rating || 0,
+            carBrand: driverInfo.CarBrand,
+            carModel: driverInfo.CarModel,
+            plateNumber: driverInfo.LicensePlateNumber,
+            pictureUrl: driverInfo.PictureAddress,
+            phone: driverInfo.PhoneNumber,
+          }
+        : null;
+
+      // Build tracking URL with driver info
+      const trackUrl = `/track?from=${encodeURIComponent(
+        currentLocation
+      )}&to=${encodeURIComponent(destination)}&eta=${eta}${
+        driverId ? `&driverId=${encodeURIComponent(driverId)}` : ""
+      }&rideId=${encodeURIComponent(newRideId)}${
+        driverData
+          ? `&driverData=${encodeURIComponent(JSON.stringify(driverData))}`
+          : ""
+      }`;
+
+      const message = `I'm taking a ride! Track me here: ${window.location.origin}${trackUrl}`;
+      const smsBody = encodeURIComponent(message);
+      const phoneNumbers = contacts.join(",");
+
+      // Check if running in mobile browser or PWA
+      const isMobile =
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+          navigator.userAgent
+        );
+
+      if (isMobile) {
+        // Try to open SMS app on mobile
+        window.location.href = `sms:${phoneNumbers}?body=${smsBody}`;
+      } else {
+        // Navigate to tracking view on browser
+        navigate(trackUrl);
+      }
+    } catch (error) {
+      console.error("Failed to initiate tracking:", error);
+      toast({
+        title: "Error",
+        description: "Failed to start ride tracking. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -240,6 +396,21 @@ const RideStart = () => {
             />
           </div>
         </div>
+
+        {/* Driver ID (readonly if from query string) */}
+        {driverId && (
+          <div className="space-y-2">
+            <Label htmlFor="driverId" className="text-base font-medium">
+              Driver ID
+            </Label>
+            <Input
+              id="driverId"
+              value={driverId}
+              disabled
+              className="bg-muted"
+            />
+          </div>
+        )}
 
         {/* ETA Selector */}
         <div className="space-y-2">
@@ -317,13 +488,20 @@ const RideStart = () => {
         </div>
 
         {/* Share Button */}
-        <Button onClick={shareRide} className="w-full h-12 text-base" size="lg">
-          Share Ride Link via SMS
+        <Button
+          onClick={shareRide}
+          className="w-full h-12 text-base"
+          size="lg"
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? "Starting Tracking..." : "Share Ride Link via SMS"}
         </Button>
 
         {/* Disclaimer */}
         <p className="text-xs text-muted-foreground text-center px-4">
-          Your phone will open the SMS app to complete the share.
+          {isSubmitting
+            ? "Please wait while we initiate your ride tracking..."
+            : "Your phone will open the SMS app to complete the share."}
         </p>
 
         {/* Test Notifications Link */}
