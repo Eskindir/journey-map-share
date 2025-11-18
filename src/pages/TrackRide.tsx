@@ -334,12 +334,12 @@ const TrackRide = () => {
     const interval = setInterval(() => {
       setTimeRemaining((prev) => {
         const newTime = prev - 1;
-        
+
         // When ETA passes 0, set status to delayed
         if (prev > 0 && newTime <= 0) {
           setRideStatus("delayed");
         }
-        
+
         return newTime;
       });
     }, 60000); // Update every minute
@@ -519,8 +519,14 @@ const TrackRide = () => {
               <Clock className="h-4 w-4 text-primary" />
               <span className="font-medium text-sm">ETA</span>
             </div>
-            <span className={`text-lg font-bold ${timeRemaining > 0 ? 'text-primary' : 'text-warning'}`}>
-              {timeRemaining > 0 ? `${timeRemaining} min` : `+${Math.abs(timeRemaining)} min`}
+            <span
+              className={`text-lg font-bold ${
+                timeRemaining > 0 ? "text-primary" : "text-warning"
+              }`}
+            >
+              {timeRemaining > 0
+                ? `${timeRemaining} min`
+                : `+${Math.abs(timeRemaining)} min`}
             </span>
           </div>
 
