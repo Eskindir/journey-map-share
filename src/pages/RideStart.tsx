@@ -324,6 +324,10 @@ const RideStart = () => {
       console.log("JSON:", JSON.stringify(result, null, 2));
       console.log("==================");
 
+      // Extract tracking request ID from response
+      const trackingRequestId = result.Id || result.id || newRideId;
+      console.log("Tracking Request ID:", trackingRequestId);
+
       toast({
         title: "Tracking Started",
         description: "Your ride tracking has been initiated successfully.",
@@ -349,7 +353,9 @@ const RideStart = () => {
         currentLocation
       )}&to=${encodeURIComponent(destination)}&eta=${eta}${
         driverId ? `&driverId=${encodeURIComponent(driverId)}` : ""
-      }&rideId=${encodeURIComponent(newRideId)}${
+      }&trackingId=${encodeURIComponent(trackingRequestId)}&rideId=${encodeURIComponent(
+        newRideId
+      )}${
         driverData
           ? `&driverData=${encodeURIComponent(JSON.stringify(driverData))}`
           : ""

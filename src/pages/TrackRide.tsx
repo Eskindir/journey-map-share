@@ -31,13 +31,22 @@ const TrackRide = () => {
   const [alerts, setAlerts] = useState<string[]>([]);
   const [sosValue, setSosValue] = useState([0]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [currentPosition, setCurrentPosition] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const [locationHistory, setLocationHistory] = useState<
+    Array<{ latitude: number; longitude: number }>
+  >([]);
   const { toast } = useToast();
 
   const from = searchParams.get("from") || "Current Location";
   const to = searchParams.get("to") || "Destination";
   const eta = parseInt(searchParams.get("eta") || "20");
-  const sendingTrackingInfo = searchParams.get("sendingTrackingInfo") === "true";
-  const trackingId = searchParams.get("trackingId") || searchParams.get("rideId") || "";
+  const sendingTrackingInfo =
+    searchParams.get("sendingTrackingInfo") === "true";
+  const trackingId =
+    searchParams.get("trackingId") || searchParams.get("rideId") || "";
   const driverId = searchParams.get("driverId") || "";
 
   // Parse driver info from query string
@@ -85,6 +94,73 @@ const TrackRide = () => {
   const initialPosition = parseGPS(from);
   const destinationPosition = parseGPS(to);
 
+  // Fetch tracking location at intervals if NOT sending (family member watching)
+  useEffect(() => {
+    if (sendingTrackingInfo || !trackingId) {
+      console.log(
+        "Skipping location fetching - either sending or no trackingId:",
+        {
+          sendingTrackingInfo,
+          trackingId,
+        }
+      );
+      return;
+    }
+
+    const fetchLocationUpdate = async () => {
+      try {
+        console.log("Fetching latest location for trackingId:", trackingId);
+        const response = await fetch(
+          `https://besecridetracking.azurewebsites.net/getlatestlocation/${trackingId}`
+        );
+
+        console.log("Fetch location response status:", response.status);
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log("Fetch location response payload:", data);
+
+          if (data.Position) {
+            const newPosition = {
+              latitude: data.Position.Latitude,
+              longitude: data.Position.Longitude,
+            };
+
+            // Update current position
+            setCurrentPosition(newPosition);
+
+            // Add to location history if it's a new position
+            setLocationHistory((prev) => {
+              const lastPos = prev[prev.length - 1];
+              if (
+                !lastPos ||
+                lastPos.latitude !== newPosition.latitude ||
+                lastPos.longitude !== newPosition.longitude
+              ) {
+                return [...prev, newPosition];
+              }
+              return prev;
+            });
+
+            console.log("Position updated:", newPosition);
+          }
+        } else {
+          console.error("Failed to fetch location:", response.status);
+        }
+      } catch (error) {
+        console.error("Error fetching location update:", error);
+      }
+    };
+
+    // Fetch immediately on mount
+    fetchLocationUpdate();
+
+    // Then fetch every 15 seconds
+    const interval = setInterval(fetchLocationUpdate, 15000);
+
+    return () => clearInterval(interval);
+  }, [sendingTrackingInfo, trackingId]);
+
   // Send tracking info at intervals if enabled
   useEffect(() => {
     if (!sendingTrackingInfo || !trackingId || !driverId) {
@@ -124,14 +200,18 @@ const TrackRide = () => {
               );
 
               console.log("Location update response status:", response.status);
-              
+
               const responseData = await response.json();
               console.log("Location update response payload:", responseData);
 
               if (response.ok) {
                 console.log("Location update sent successfully");
               } else {
-                console.error("Failed to send location update:", response.status, responseData);
+                console.error(
+                  "Failed to send location update:",
+                  response.status,
+                  responseData
+                );
               }
             } catch (error) {
               console.error("Error sending location update:", error);
@@ -284,9 +364,10 @@ const TrackRide = () => {
       {/* Map - Full Screen */}
       <div className="absolute inset-0">
         <MapView
-          initialPosition={initialPosition || undefined}
+          initialPosition={currentPosition || initialPosition || undefined}
           destinationPosition={destinationPosition || undefined}
-          showGoogleMap={!!initialPosition}
+          locationHistory={locationHistory}
+          showGoogleMap={!!(currentPosition || initialPosition)}
         />
       </div>
 

@@ -1,16 +1,23 @@
 import { useEffect, useState, useRef } from "react";
 import { MapPin, Navigation } from "lucide-react";
-import { GoogleMap, LoadScript, Marker } from "@react-google-maps/api";
+import {
+  GoogleMap,
+  LoadScript,
+  Marker,
+  Polyline,
+} from "@react-google-maps/api";
 
 interface MapViewProps {
   initialPosition?: { latitude: number; longitude: number };
   destinationPosition?: { latitude: number; longitude: number };
+  locationHistory?: Array<{ latitude: number; longitude: number }>;
   showGoogleMap?: boolean;
 }
 
 const MapView = ({
   initialPosition,
   destinationPosition,
+  locationHistory = [],
   showGoogleMap = false,
 }: MapViewProps) => {
   const [progress, setProgress] = useState(0);
@@ -50,6 +57,35 @@ const MapView = ({
 
   // If Google Map should be shown and we have initial position
   if (showGoogleMap && initialPosition) {
+    // Create path from location history
+    const routePath =
+      locationHistory.length > 1
+        ? locationHistory.map((pos) => ({
+            lat: pos.latitude,
+            lng: pos.longitude,
+          }))
+        : [];
+
+    // Polyline options for the history path (dotted line)
+    const polylineOptions = {
+      strokeColor: "#3b82f6", // Blue color
+      strokeOpacity: 0,
+      strokeWeight: 2,
+      icons: [
+        {
+          icon: {
+            path: "M 0,-1 0,1",
+            strokeOpacity: 0.7,
+            strokeWeight: 2,
+            scale: 3,
+          },
+          offset: "0",
+          repeat: "12px",
+        },
+      ],
+      geodesic: true,
+    };
+
     return (
       <div className="relative w-full h-full">
         <LoadScript googleMapsApiKey="AIzaSyDABp7Bg9ODZSE3oFcJ5LpdBz2wLqP7PRg">
@@ -60,16 +96,27 @@ const MapView = ({
             options={mapOptions}
             onLoad={(map) => {
               mapRef.current = map;
-              
+
               // Auto-fit bounds to show both markers
               if (initialPosition && destinationPosition) {
                 const bounds = new google.maps.LatLngBounds();
-                bounds.extend({ lat: initialPosition.latitude, lng: initialPosition.longitude });
-                bounds.extend({ lat: destinationPosition.latitude, lng: destinationPosition.longitude });
+                bounds.extend({
+                  lat: initialPosition.latitude,
+                  lng: initialPosition.longitude,
+                });
+                bounds.extend({
+                  lat: destinationPosition.latitude,
+                  lng: destinationPosition.longitude,
+                });
                 map.fitBounds(bounds);
               }
             }}
           >
+            {/* Route History Polyline (dotted) */}
+            {routePath.length > 1 && (
+              <Polyline path={routePath} options={polylineOptions} />
+            )}
+
             {/* Initial Position Marker */}
             <Marker
               position={{
