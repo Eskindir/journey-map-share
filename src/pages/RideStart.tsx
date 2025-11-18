@@ -353,9 +353,9 @@ const RideStart = () => {
         currentLocation
       )}&to=${encodeURIComponent(destination)}&eta=${eta}${
         driverId ? `&driverId=${encodeURIComponent(driverId)}` : ""
-      }&trackingId=${encodeURIComponent(trackingRequestId)}&rideId=${encodeURIComponent(
-        newRideId
-      )}${
+      }&trackingId=${encodeURIComponent(
+        trackingRequestId
+      )}&rideId=${encodeURIComponent(newRideId)}${
         driverData
           ? `&driverData=${encodeURIComponent(JSON.stringify(driverData))}`
           : ""
