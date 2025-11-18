@@ -176,16 +176,37 @@ const TrackRide = () => {
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           async (position) => {
+            const newPosition = {
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+            };
+
             const payload = {
               driverId: driverId,
               trackinngId: trackingId, // Note: API has typo "trackinngId"
               position: {
-                latitude: position.coords.latitude.toString(),
-                longitude: position.coords.longitude.toString(),
+                latitude: newPosition.latitude.toString(),
+                longitude: newPosition.longitude.toString(),
               },
             };
 
             console.log("Sending location update:", payload);
+
+            // Update current position on the map
+            setCurrentPosition(newPosition);
+
+            // Add to location history if it's a new position
+            setLocationHistory((prev) => {
+              const lastPos = prev[prev.length - 1];
+              if (
+                !lastPos ||
+                lastPos.latitude !== newPosition.latitude ||
+                lastPos.longitude !== newPosition.longitude
+              ) {
+                return [...prev, newPosition];
+              }
+              return prev;
+            });
 
             try {
               const response = await fetch(
