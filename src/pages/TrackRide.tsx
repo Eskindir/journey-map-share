@@ -330,41 +330,30 @@ const TrackRide = () => {
   useEffect(() => {
     setTimeRemaining(eta);
 
-    // Simulate countdown
+    // Countdown timer - runs continuously
     const interval = setInterval(() => {
       setTimeRemaining((prev) => {
-        if (prev <= 0) {
-          clearInterval(interval);
-          navigate("/ride-end");
-          return 0;
+        const newTime = prev - 1;
+        
+        // When ETA passes 0, set status to delayed
+        if (prev > 0 && newTime <= 0) {
+          setRideStatus("delayed");
         }
-        return prev - 1;
+        
+        return newTime;
       });
     }, 60000); // Update every minute
 
-    // Simulate status changes for demo
+    // Simulate status changes for demo (route deviation only)
     const statusTimeout = setTimeout(() => {
-      const statuses: Array<"on-time" | "delayed" | "deviated" | "paused"> = [
-        "on-time",
-        "delayed",
-        "deviated",
-      ];
-      const randomStatus =
-        statuses[Math.floor(Math.random() * statuses.length)];
-      setRideStatus(randomStatus);
-
-      if (randomStatus === "deviated") {
+      const shouldDeviate = Math.random() > 0.7; // 30% chance of deviation
+      if (shouldDeviate) {
+        setRideStatus("deviated");
         setAlerts(["Route deviation detected"]);
         // Trigger route deviation notification
         notificationService.showNotification(
           "route-deviation",
           "Your driver has deviated from the planned route."
-        );
-      } else if (randomStatus === "delayed") {
-        // Trigger delay notification
-        notificationService.showNotification(
-          "delay",
-          "Your ride is delayed by 5 minutes due to traffic."
         );
       }
     }, 10000);
@@ -395,7 +384,8 @@ const TrackRide = () => {
       case "on-time":
         return "On Time";
       case "delayed":
-        return "Delayed";
+        const delayMinutes = Math.abs(timeRemaining);
+        return `Delayed by ${delayMinutes} min`;
       case "deviated":
         return "Route Changed";
       case "paused":
@@ -529,8 +519,8 @@ const TrackRide = () => {
               <Clock className="h-4 w-4 text-primary" />
               <span className="font-medium text-sm">ETA</span>
             </div>
-            <span className="text-lg font-bold text-primary">
-              {timeRemaining} min
+            <span className={`text-lg font-bold ${timeRemaining > 0 ? 'text-primary' : 'text-warning'}`}>
+              {timeRemaining > 0 ? `${timeRemaining} min` : `+${Math.abs(timeRemaining)} min`}
             </span>
           </div>
 
