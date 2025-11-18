@@ -38,6 +38,8 @@ const TrackRide = () => {
   const [locationHistory, setLocationHistory] = useState<
     Array<{ latitude: number; longitude: number }>
   >([]);
+  const [currentLocationAddress, setCurrentLocationAddress] = useState("");
+  const [destinationAddress, setDestinationAddress] = useState("");
   const { toast } = useToast();
 
   const from = searchParams.get("from") || "Current Location";
@@ -93,6 +95,64 @@ const TrackRide = () => {
 
   const initialPosition = parseGPS(from);
   const destinationPosition = parseGPS(to);
+
+  // Geocode initial position on mount
+  useEffect(() => {
+    if (initialPosition && !currentPosition) {
+      setCurrentPosition(initialPosition);
+    }
+  }, []);
+
+  // Geocode destination on mount
+  useEffect(() => {
+    if (destinationPosition) {
+      reverseGeocode(
+        destinationPosition.latitude,
+        destinationPosition.longitude
+      ).then((address) => {
+        if (address) {
+          setDestinationAddress(address);
+        }
+      });
+    }
+  }, []);
+
+  // Reverse geocode coordinates to get address
+  const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
+    try {
+      console.log("Attempting to geocode:", lat, lon);
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&key=AIzaSyDABp7Bg9ODZSE3oFcJ5LpdBz2wLqP7PRg`
+      );
+      const data = await response.json();
+      console.log("Geocoding API response:", data);
+      if (data.results && data.results.length > 0) {
+        const address = data.results[0].formatted_address;
+        console.log("Geocoded address:", address);
+        return address;
+      }
+      console.log("No geocoding results found");
+      return "";
+    } catch (error) {
+      console.error("Geocoding error:", error);
+      return "";
+    }
+  };
+
+  // Update address when position changes
+  useEffect(() => {
+    console.log("Current position changed:", currentPosition);
+    if (currentPosition) {
+      reverseGeocode(currentPosition.latitude, currentPosition.longitude).then(
+        (address) => {
+          console.log("Setting address:", address);
+          if (address) {
+            setCurrentLocationAddress(address);
+          }
+        }
+      );
+    }
+  }, [currentPosition]);
 
   // Fetch tracking location at intervals if NOT sending (family member watching)
   useEffect(() => {
@@ -383,7 +443,7 @@ const TrackRide = () => {
       </div>
 
       {/* Map - Full Screen */}
-      <div className="absolute inset-0">
+      <div className="absolute inset-0 pb-[60vh] md:pb-0">
         <MapView
           initialPosition={currentPosition || initialPosition || undefined}
           destinationPosition={destinationPosition || undefined}
@@ -393,7 +453,7 @@ const TrackRide = () => {
       </div>
 
       {/* Info Card - Desktop: Top Right, Mobile: Bottom */}
-      <Card className="absolute md:top-4 md:right-4 bottom-0 left-0 right-0 md:left-auto md:bottom-auto md:w-96 md:max-h-[calc(100vh-2rem)] overflow-y-auto z-10 md:rounded-lg rounded-t-2xl md:rounded-b-lg border-t md:border shadow-2xl">
+      <Card className="absolute md:top-4 md:right-4 bottom-0 left-0 right-0 md:left-auto md:bottom-auto md:w-96 md:max-h-[calc(100vh-2rem)] max-h-[60vh] overflow-y-auto z-10 md:rounded-lg rounded-t-2xl md:rounded-b-lg border-t md:border shadow-2xl">
         <CardContent className="p-4 space-y-4">
           {/* Driver Info */}
           <div className="flex items-start gap-3 pb-4 border-b border-border">
@@ -487,8 +547,23 @@ const TrackRide = () => {
                 <div className="w-2 h-2 rounded-full bg-success ring-2 ring-success/20" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs text-muted-foreground">Pickup</p>
-                <p className="text-sm font-medium line-clamp-2">{from}</p>
+                <p className="text-xs text-muted-foreground">
+                  Current Location
+                </p>
+                {currentLocationAddress && currentPosition ? (
+                  <p className="text-sm font-medium line-clamp-2">
+                    {currentLocationAddress} (
+                    {currentPosition.latitude.toFixed(6)},{" "}
+                    {currentPosition.longitude.toFixed(6)})
+                  </p>
+                ) : currentPosition ? (
+                  <p className="text-sm font-medium line-clamp-2">
+                    {currentPosition.latitude.toFixed(6)},{" "}
+                    {currentPosition.longitude.toFixed(6)}
+                  </p>
+                ) : (
+                  <p className="text-sm font-medium line-clamp-2">{from}</p>
+                )}
               </div>
             </div>
 
@@ -502,7 +577,20 @@ const TrackRide = () => {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs text-muted-foreground">Drop-off</p>
-                <p className="text-sm font-medium line-clamp-2">{to}</p>
+                {destinationAddress && destinationPosition ? (
+                  <p className="text-sm font-medium line-clamp-2">
+                    {destinationAddress} (
+                    {destinationPosition.latitude.toFixed(6)},{" "}
+                    {destinationPosition.longitude.toFixed(6)})
+                  </p>
+                ) : destinationPosition ? (
+                  <p className="text-sm font-medium line-clamp-2">
+                    {destinationPosition.latitude.toFixed(6)},{" "}
+                    {destinationPosition.longitude.toFixed(6)}
+                  </p>
+                ) : (
+                  <p className="text-sm font-medium line-clamp-2">{to}</p>
+                )}
               </div>
             </div>
           </div>

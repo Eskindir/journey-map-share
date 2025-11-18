@@ -355,7 +355,7 @@ const RideStart = () => {
         driverId ? `&driverId=${encodeURIComponent(driverId)}` : ""
       }&trackingId=${encodeURIComponent(
         trackingRequestId
-      )}&rideId=${encodeURIComponent(newRideId)}${
+      )}&rideId=${encodeURIComponent(newRideId)}&sendingTrackingInfo=true${
         driverData
           ? `&driverData=${encodeURIComponent(JSON.stringify(driverData))}`
           : ""
