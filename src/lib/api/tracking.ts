@@ -204,7 +204,8 @@ export interface SendLocationResult {
 export async function sendLocationUpdate(
   trackingId: string,
   driverId: string,
-  position: Position
+  position: Position,
+  rideStatus: RideStatus = 'Ongoing'
 ): Promise<SendLocationResult> {
   debugLog('Sending location update:', { trackingId, driverId, position });
 
@@ -212,6 +213,7 @@ export async function sendLocationUpdate(
     driverId,
     trackingId,
     position,
+    rideStatus,
   };
 
   const response = await apiPost<unknown>(`/addgeolocationtoride/${trackingId}`, request);
@@ -293,7 +295,6 @@ export async function closeTracking(
 export function buildTrackingUrl(params: {
   from: string;
   to: string;
-  eta: number;
   trackingId: string;
   driverId?: string;
   driverInfo?: NormalizedDriverInfo | null;
@@ -302,7 +303,6 @@ export function buildTrackingUrl(params: {
   const {
     from,
     to,
-    eta,
     trackingId,
     driverId,
     driverInfo,
@@ -312,7 +312,6 @@ export function buildTrackingUrl(params: {
   const searchParams = new URLSearchParams({
     from,
     to,
-    eta: eta.toString(),
     trackingId,
     sendingTrackingInfo: sendingTrackingInfo.toString(),
   });

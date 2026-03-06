@@ -138,6 +138,7 @@ export const AddGeolocationRequestSchema = z.object({
   driverId: z.string(),
   position: PositionSchema,
   trackingId: z.string(),
+  rideStatus: RideStatusSchema,
 });
 export type AddGeolocationRequest = z.infer<typeof AddGeolocationRequestSchema>;
 

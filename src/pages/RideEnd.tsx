@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { CheckCircle2, XCircle, User, Car } from "lucide-react";
+import MapView from "@/components/MapView";
+import { parseGPSCoordinates } from "@/lib/validation";
 
 const RideEnd = () => {
   const navigate = useNavigate();
@@ -12,6 +14,7 @@ const RideEnd = () => {
   const trackingId = searchParams.get("trackingId") || "";
   const status = searchParams.get("status") || "ArrivedSafely";
   const closedAtParam = searchParams.get("closedAt");
+  const destination = searchParams.get("destination") || "";
 
   // Extract driver info params
   const driverName = searchParams.get("driverName") || "";
@@ -24,6 +27,11 @@ const RideEnd = () => {
   const viewerType = (searchParams.get("viewerType") || "watcher") as
     | "driver"
     | "watcher";
+
+  // Parse destination coordinates for the map
+  const destinationPosition = destination
+    ? parseGPSCoordinates(destination)
+    : null;
 
   // Check if driver info is available
   const hasDriverInfo = Boolean(driverName);
@@ -49,47 +57,70 @@ const RideEnd = () => {
   };
 
   // Get message based on ride status and viewer type
-  const getCompletionMessage = (): { title: string; isSuccess: boolean } => {
-    const isSuccess = status !== "Cancelled";
-
+  const getCompletionMessage = (): {
+    title: string;
+    subtitle: string;
+    isSuccess: boolean;
+  } => {
     if (status === "Cancelled") {
-      return { title: "Ride Cancelled", isSuccess: false };
+      return {
+        title: "Ride Cancelled",
+        subtitle: "The ride was cancelled.",
+        isSuccess: false,
+      };
     }
 
-    // Context-aware messaging based on viewer type
     if (viewerType === "driver") {
       switch (status) {
         case "ArrivedSafely":
-          return { title: "You arrived safely!", isSuccess: true };
+          return {
+            title: "Customer has arrived safely",
+            subtitle: "The ride has been completed successfully.",
+            isSuccess: true,
+          };
         case "RideEndedByDriver":
-          return { title: "Ride ended", isSuccess: true };
+          return {
+            title: "Ride finished",
+            subtitle: "You have ended the ride.",
+            isSuccess: true,
+          };
         default:
-          return { title: "Ride completed", isSuccess: true };
+          return {
+            title: "Ride completed",
+            subtitle: "The ride has ended.",
+            isSuccess: true,
+          };
       }
     } else {
-      // Watcher messaging - include driver name if available
-      const name = driverName || "";
+      const name = driverName || "The rider";
       switch (status) {
         case "ArrivedSafely":
           return {
-            title: name ? `${name} arrived safely!` : "Arrived safely!",
+            title: `${name} has arrived safely!`,
+            subtitle: "The ride has been completed successfully.",
             isSuccess: true,
           };
         case "RideEndedByDriver":
           return {
-            title: name ? `${name}'s ride ended` : "Ride ended",
+            title: "Ride finished",
+            subtitle: `${name}'s ride was ended by the driver.`,
             isSuccess: true,
           };
         default:
           return {
-            title: name ? `${name}'s ride completed` : "Ride completed",
+            title: `${name}'s ride completed`,
+            subtitle: "The ride has ended.",
             isSuccess: true,
           };
       }
     }
   };
 
-  const { title: completionTitle, isSuccess } = getCompletionMessage();
+  const {
+    title: completionTitle,
+    subtitle: completionSubtitle,
+    isSuccess,
+  } = getCompletionMessage();
   const formattedTime = getFormattedTime();
 
   return (
@@ -98,6 +129,17 @@ const RideEnd = () => {
       <header className="bg-card border-b border-border p-4">
         <h1 className="text-xl font-semibold text-center">Ride Completed</h1>
       </header>
+
+      {/* Map showing destination */}
+      {destinationPosition && (
+        <div className="w-full h-48 md:h-64">
+          <MapView
+            initialPosition={destinationPosition}
+            destinationPosition={destinationPosition}
+            showGoogleMap={true}
+          />
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 p-6 flex flex-col items-center justify-center gap-6">
@@ -126,7 +168,8 @@ const RideEnd = () => {
             {/* Completion Message */}
             <div className="space-y-2">
               <h2 className="text-2xl font-bold">{completionTitle}</h2>
-              <p className="text-muted-foreground">
+              <p className="text-muted-foreground">{completionSubtitle}</p>
+              <p className="text-sm text-muted-foreground">
                 {viewerType === "driver" ? "Your" : "The"} ride ended at{" "}
                 <span className="font-medium">{formattedTime}</span>
               </p>
@@ -167,7 +210,8 @@ const RideEnd = () => {
           </Card>
         )}
 
-        {/* Actions */}
+        {/* Actions - Only shown for driver */}
+        {viewerType === "driver" && (
         <div className="w-full max-w-md space-y-3">
           <Button variant="outline" className="w-full">
             Report an Issue
@@ -176,6 +220,7 @@ const RideEnd = () => {
             Done
           </Button>
         </div>
+        )}
       </div>
     </div>
   );

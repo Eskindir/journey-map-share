@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -19,8 +18,6 @@ import {
   Star,
   MapPin,
   Navigation,
-  Clock,
-  AlertTriangle,
   Phone,
   MessageSquare,
   Car,
@@ -29,9 +26,7 @@ import {
   Loader2,
 } from "lucide-react";
 import MapView from "@/components/MapView";
-import AlertBanner from "@/components/AlertBanner";
 import driverPhoto from "@/assets/driver-photo.jpg";
-import { notificationService } from "@/lib/notifications";
 import { useToast } from "@/hooks/use-toast";
 import { debugLog } from "@/lib/config";
 import {
@@ -48,12 +43,8 @@ import { handleApiError, handleGeolocationError } from "@/lib/errors";
 const TrackRide = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [timeRemaining, setTimeRemaining] = useState(20);
-  const [rideStatus, setRideStatus] = useState<
-    "on-time" | "delayed" | "deviated" | "paused"
-  >("on-time");
-  const [alerts, setAlerts] = useState<string[]>([]);
   const [sosValue, setSosValue] = useState([0]);
+  const [sosActivated, setSosActivated] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isEndingRide, setIsEndingRide] = useState(false);
   const [showEndRideDialog, setShowEndRideDialog] = useState(false);
@@ -70,7 +61,6 @@ const TrackRide = () => {
 
   const from = searchParams.get("from") || "Current Location";
   const to = searchParams.get("to") || "Destination";
-  const eta = parseInt(searchParams.get("eta") || "20");
   const sendingTrackingInfo =
     searchParams.get("sendingTrackingInfo") === "true";
   const trackingId = searchParams.get("trackingId") || "";
@@ -202,8 +192,17 @@ const TrackRide = () => {
               params.set("modelType", carInfo);
             }
 
+            if (to) {
+              params.set("destination", to);
+            }
+
             navigate(`/ride-end?${params.toString()}`);
             return;
+          }
+
+          // Detect SOS status from backend
+          if (latestLocation.rideStatus === "SOS") {
+            setSosActivated(true);
           }
 
           const newPosition = latestLocation.position;
@@ -292,7 +291,7 @@ const TrackRide = () => {
             });
 
             try {
-              await sendLocationUpdate(trackingId, driverId, newPosition);
+              await sendLocationUpdate(trackingId, driverId, newPosition, sosActivated ? "SOS" : "Ongoing");
               debugLog("Location update sent successfully");
             } catch (error) {
               // Log but continue - the retry logic will handle transient errors
@@ -313,7 +312,7 @@ const TrackRide = () => {
     const interval = setInterval(sendLocationUpdateFn, 15000);
 
     return () => clearInterval(interval);
-  }, [sendingTrackingInfo, trackingId, driverId]);
+  }, [sendingTrackingInfo, trackingId, driverId, sosActivated]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -328,93 +327,32 @@ const TrackRide = () => {
     };
   }, []);
 
-  useEffect(() => {
-    setTimeRemaining(eta);
 
-    // Countdown timer - runs continuously
-    const interval = setInterval(() => {
-      setTimeRemaining((prev) => {
-        const newTime = prev - 1;
-
-        // When ETA passes 0, set status to delayed
-        if (prev > 0 && newTime <= 0) {
-          setRideStatus("delayed");
-        }
-
-        return newTime;
-      });
-    }, 60000); // Update every minute
-
-    // Simulate status changes for demo (route deviation only)
-    const statusTimeout = setTimeout(() => {
-      const shouldDeviate = Math.random() > 0.7; // 30% chance of deviation
-      if (shouldDeviate) {
-        setRideStatus("deviated");
-        setAlerts(["Route deviation detected"]);
-        // Trigger route deviation notification
-        notificationService.showNotification(
-          "route-deviation",
-          "Your driver has deviated from the planned route.",
-        );
-      }
-    }, 10000);
-
-    return () => {
-      clearInterval(interval);
-      clearTimeout(statusTimeout);
-    };
-  }, [eta, navigate]);
-
-  const getStatusColor = () => {
-    switch (rideStatus) {
-      case "on-time":
-        return "bg-success text-success-foreground";
-      case "delayed":
-        return "bg-warning text-warning-foreground";
-      case "deviated":
-        return "bg-warning text-warning-foreground";
-      case "paused":
-        return "bg-danger text-danger-foreground";
-      default:
-        return "bg-muted";
-    }
-  };
-
-  const getStatusText = () => {
-    switch (rideStatus) {
-      case "on-time":
-        return "On Time";
-      case "delayed":
-        const delayMinutes = Math.abs(timeRemaining);
-        return `Delayed by ${delayMinutes} min`;
-      case "deviated":
-        return "Route Changed";
-      case "paused":
-        return "Stopped";
-      default:
-        return "Unknown";
-    }
-  };
-
-  const handleSosChange = async (value: number[]) => {
+  const handleSosChange = (value: number[]) => {
     setSosValue(value);
     if (value[0] >= 95) {
-      setAlerts(["Emergency SOS activated! Help is on the way."]);
+      setSosActivated(true);
+      setSosValue([0]);
 
-      // Trigger SOS notification
-      await notificationService.showNotification(
-        "sos",
-        "EMERGENCY! Your location has been shared with emergency contacts and authorities.",
+      // Read contacts from sessionStorage
+      const storedContacts = sessionStorage.getItem(
+        `sos-contacts-${trackingId}`,
       );
+      const contacts: string[] = storedContacts
+        ? JSON.parse(storedContacts)
+        : [];
 
-      toast({
-        title: "🚨 Emergency SOS Activated",
-        description: "Help is on the way!",
-        variant: "destructive",
-      });
+      // Build SOS message with current location
+      let sosMessage = "EMERGENCY SOS! I need help immediately!";
+      if (currentPosition) {
+        sosMessage += ` My location: https://maps.google.com/?q=${currentPosition.latitude},${currentPosition.longitude}`;
+      }
 
-      // Reset after activation
-      setTimeout(() => setSosValue([0]), 1000);
+      // Open SMS app with contacts
+      if (contacts.length > 0) {
+        const phoneNumbers = contacts.join(",");
+        window.location.href = `sms:${phoneNumbers}?body=${encodeURIComponent(sosMessage)}`;
+      }
     }
   };
 
@@ -454,6 +392,10 @@ const TrackRide = () => {
         modelType: carInfo,
       });
 
+      if (to) {
+        params.set("destination", to);
+      }
+
       // Add optional params with encoding for special characters
       if (driverPhotoUrl && driverPhotoUrl !== driverPhoto) {
         params.set("pictureUrl", encodeURIComponent(driverPhotoUrl));
@@ -476,19 +418,22 @@ const TrackRide = () => {
 
   return (
     <div className="min-h-screen bg-background relative">
-      {/* Alert Banners */}
+      {/* Status Banners */}
       <div className="absolute top-0 left-0 right-0 z-20">
         {!isOnline && (
-          <AlertBanner
-            message="⚠️ NO NETWORK CONNECTION - Location tracking unavailable"
-            variant="warning"
-          />
+          <div className="bg-warning text-warning-foreground px-4 py-3 flex items-center gap-3 shadow-md">
+            <span className="flex-1 text-sm font-medium">
+              NO NETWORK CONNECTION - Location tracking unavailable
+            </span>
+          </div>
         )}
-        {alerts.map((alert, index) => (
-          <AlertBanner key={index} message={alert} variant="warning" />
-        ))}
+        {sosActivated && (
+          <div className="bg-destructive text-destructive-foreground px-4 py-3 text-center font-bold text-sm shadow-md animate-pulse">
+            SOS ACTIVATED - React immediately! Emergency contacts have
+            been notified.
+          </div>
+        )}
       </div>
-
       {/* Map - Full Screen */}
       <div className="absolute inset-0 pb-[60vh] md:pb-0">
         <MapView
@@ -570,29 +515,6 @@ const TrackRide = () => {
             </div>
           </div>
 
-          {/* ETA Countdown */}
-          <div className="flex items-center justify-between py-2.5 px-3 bg-primary/5 rounded-lg border border-primary/20">
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-primary" />
-              <span className="font-medium text-sm">ETA</span>
-            </div>
-            <span
-              className={`text-lg font-bold ${
-                timeRemaining > 0 ? "text-primary" : "text-warning"
-              }`}
-            >
-              {timeRemaining > 0
-                ? `${timeRemaining} min`
-                : `+${Math.abs(timeRemaining)} min`}
-            </span>
-          </div>
-
-          {/* Ride Status */}
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Status</span>
-            <Badge className={getStatusColor()}>{getStatusText()}</Badge>
-          </div>
-
           {/* Pickup & Drop-off */}
           <div className="space-y-2.5">
             <div className="flex gap-2.5">
@@ -648,16 +570,6 @@ const TrackRide = () => {
             </div>
           </div>
 
-          {/* Alerts Badge */}
-          {alerts.length > 0 && (
-            <div className="flex items-center gap-2 p-2.5 bg-warning/10 border border-warning/20 rounded-lg">
-              <AlertTriangle className="h-4 w-4 text-warning" />
-              <span className="text-xs font-medium text-warning-foreground">
-                {alerts[0]}
-              </span>
-            </div>
-          )}
-
           {/* End Ride Button - Only visible for driver mode */}
           {sendingTrackingInfo && (
             <div className="pt-2 border-t border-border">
@@ -712,7 +624,8 @@ const TrackRide = () => {
             </div>
           )}
 
-          {/* SOS Slider */}
+          {/* SOS Slider - Only visible for rider */}
+          {sendingTrackingInfo && (
           <div className="space-y-2 pt-2 border-t border-border">
             <div className="flex items-center gap-2">
               <ShieldAlert className="h-4 w-4 text-destructive" />
@@ -738,6 +651,7 @@ const TrackRide = () => {
               </div>
             </div>
           </div>
+          )}
         </CardContent>
       </Card>
     </div>

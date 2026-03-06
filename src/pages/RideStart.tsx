@@ -259,6 +259,14 @@ const RideStart = () => {
 
       debugLog("Tracking initiated:", result);
 
+      // Persist contacts for SOS feature
+      if (result.trackingId) {
+        sessionStorage.setItem(
+          `sos-contacts-${result.trackingId}`,
+          JSON.stringify(contacts),
+        );
+      }
+
       toast({
         title: "Tracking Started",
         description: "Your ride tracking has been initiated successfully.",
@@ -395,26 +403,8 @@ const RideStart = () => {
           </div>
         )}
 
-        {/* ETA Selector */}
-        <div className="space-y-2">
-          <Label htmlFor="eta" className="text-base font-medium">
-            Estimated Time of Arrival
-          </Label>
-          <div className="flex items-center gap-3">
-            <Input
-              id="eta"
-              type="number"
-              min="5"
-              max="120"
-              value={eta}
-              onChange={(e) => setEta(parseInt(e.target.value) || 20)}
-              className="w-24"
-            />
-            <span className="text-sm text-muted-foreground">minutes</span>
-          </div>
-        </div>
 
-        {/* Select Contacts */}
+                {/* Select Contacts */}
         <div className="space-y-3">
           <Label className="text-base font-medium">Select Contacts</Label>
 
