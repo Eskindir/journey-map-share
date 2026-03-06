@@ -1,3 +1,5 @@
+import { config, debugLog } from '@/lib/config';
+
 export type NotificationType = 'sos' | 'route-deviation' | 'delay' | 'arrival' | 'general';
 
 export interface NotificationConfig {
@@ -215,11 +217,16 @@ export class NotificationService {
     }
 
     try {
+      // Check if VAPID key is configured
+      if (!config.push.vapidPublicKey) {
+        debugLog('VAPID public key not configured, skipping push subscription');
+        return null;
+      }
+
       const subscription = await this.registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: this.urlBase64ToUint8Array(
-          // Replace with your VAPID public key
-          'YOUR_VAPID_PUBLIC_KEY'
+          config.push.vapidPublicKey
         ) as BufferSource
       });
 

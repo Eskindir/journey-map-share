@@ -6,6 +6,7 @@ import {
   Marker,
   Polyline,
 } from "@react-google-maps/api";
+import { config } from "@/lib/config";
 
 interface MapViewProps {
   initialPosition?: { latitude: number; longitude: number };
@@ -88,7 +89,7 @@ const MapView = ({
 
     return (
       <div className="relative w-full h-full">
-        <LoadScript googleMapsApiKey="AIzaSyDABp7Bg9ODZSE3oFcJ5LpdBz2wLqP7PRg">
+        <LoadScript googleMapsApiKey={config.googleMaps.apiKey}>
           <GoogleMap
             mapContainerStyle={mapContainerStyle}
             center={defaultCenter}

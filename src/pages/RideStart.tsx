@@ -6,6 +6,19 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { MapPin, Navigation, User, X, Bell } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { debugLog } from "@/lib/config";
+import {
+  initiateTracking,
+  buildTrackingUrl,
+  reverseGeocode as apiReverseGeocode,
+} from "@/lib/api";
+import { parseGPSCoordinates as validationParseGPS } from "@/lib/validation";
+import {
+  handleApiError,
+  handleGeolocationError,
+  showError,
+  ErrorCode,
+} from "@/lib/errors";
 
 const RideStart = () => {
   const navigate = useNavigate();
@@ -32,41 +45,12 @@ const RideStart = () => {
     setSupportsContactPicker(hasContactPicker);
   }, []);
 
-  // Parse GPS coordinates helper function
-  const parseGPSCoordinates = (gpsString: string) => {
-    const parts = gpsString.split(",").map((s) => s.trim());
-    if (parts.length === 2) {
-      const lat = parseFloat(parts[0]);
-      const lon = parseFloat(parts[1]);
-      if (!isNaN(lat) && !isNaN(lon)) {
-        return {
-          latitude: lat,
-          longitude: lon,
-        };
-      }
-    }
-    return null;
-  };
+  // Use validation service for GPS parsing
+  const parseGPSCoordinates = validationParseGPS;
 
-  // Reverse geocode coordinates to get address
+  // Use API service for reverse geocoding
   const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
-    try {
-      console.log(`Reverse geocoding: ${lat}, ${lon}`);
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&key=AIzaSyDABp7Bg9ODZSE3oFcJ5LpdBz2wLqP7PRg`
-      );
-      const data = await response.json();
-      console.log("Geocoding response:", data);
-      if (data.results && data.results.length > 0) {
-        const address = data.results[0].formatted_address;
-        console.log("Address found:", address);
-        return address;
-      }
-      return `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
-    } catch (error) {
-      console.error("Geocoding error:", error);
-      return `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
-    }
+    return apiReverseGeocode({ latitude: lat, longitude: lon });
   };
 
   // Auto-detect location on mount and handle query string destination
@@ -117,14 +101,14 @@ const RideStart = () => {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
           const coordsString = `${position.coords.latitude.toFixed(
-            4
+            4,
           )}, ${position.coords.longitude.toFixed(4)}`;
           setCurrentLocation(coordsString);
 
           // Get address for current location
           const address = await reverseGeocode(
             position.coords.latitude,
-            position.coords.longitude
+            position.coords.longitude,
           );
           setCurrentLocationAddress(address);
           setIsLoadingLocation(false);
@@ -136,12 +120,8 @@ const RideStart = () => {
         },
         (error) => {
           setIsLoadingLocation(false);
-          toast({
-            title: "Location Access Denied",
-            description: "Please enter your location manually.",
-            variant: "destructive",
-          });
-        }
+          handleGeolocationError(error);
+        },
       );
     } else {
       setIsLoadingLocation(false);
@@ -154,14 +134,14 @@ const RideStart = () => {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
           const coordsString = `${position.coords.latitude.toFixed(
-            4
+            4,
           )}, ${position.coords.longitude.toFixed(4)}`;
           setCurrentLocation(coordsString);
 
           // Get address for current location
           const address = await reverseGeocode(
             position.coords.latitude,
-            position.coords.longitude
+            position.coords.longitude,
           );
           setCurrentLocationAddress(address);
           setIsLoadingLocation(false);
@@ -173,13 +153,8 @@ const RideStart = () => {
         },
         (error) => {
           setIsLoadingLocation(false);
-          toast({
-            title: "Location Error",
-            description:
-              "Unable to detect your location. Please enter manually.",
-            variant: "destructive",
-          });
-        }
+          handleGeolocationError(error);
+        },
       );
     }
   };
@@ -236,55 +211,41 @@ const RideStart = () => {
 
   const shareRide = async () => {
     if (!currentLocation || !destination) {
-      toast({
-        title: "Missing Information",
-        description: "Please enter your location and destination.",
-        variant: "destructive",
-      });
+      showError(
+        ErrorCode.VALIDATION_ERROR,
+        "Please enter your location and destination.",
+      );
       return;
     }
 
     if (contacts.length === 0) {
-      toast({
-        title: "No Contacts Selected",
-        description: "Please add at least one contact to share with.",
-        variant: "destructive",
-      });
+      showError(
+        ErrorCode.VALIDATION_ERROR,
+        "Please add at least one contact to share with.",
+      );
       return;
     }
 
-    // Parse GPS coordinates
+    // Parse GPS coordinates using validation service
     const initialPosition = parseGPSCoordinates(currentLocation);
     const destinationPosition = parseGPSCoordinates(destination);
 
     if (!initialPosition || !destinationPosition) {
-      toast({
-        title: "Invalid Coordinates",
-        description: "Please ensure locations are in lat,lon format.",
-        variant: "destructive",
-      });
+      showError(ErrorCode.INVALID_COORDINATES);
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      // Generate a new GUID for rideId if not provided
-      const generateGuid = () => {
-        return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-          const r = (Math.random() * 16) | 0;
-          const v = c === "x" ? r : (r & 0x3) | 0x8;
-          return v.toString(16);
-        });
-      };
-
-      const newRideId = rideId || generateGuid();
+      // Use rideId from query string only; send empty string if not present
+      const newRideId = rideId || "";
 
       // Use driverId as deviceCode if deviceCode is not provided
       const finalDeviceCode = deviceCode || driverId || "UNKNOWN";
 
-      // Prepare API payload
-      const payload = {
+      // Call tracking API using the service
+      const result = await initiateTracking({
         deviceCode: finalDeviceCode,
         rideId: newRideId,
         trackingRecipients: contacts.join(","),
@@ -294,72 +255,33 @@ const RideStart = () => {
         driverIdFromDispatchService: finalDeviceCode,
         driverPlateNumber: plateNumber || "N/A",
         modelType: "Besec.Tracking.Models.TrackingRequest",
-      };
+      });
 
-      // Log payload to console
-      console.log(
-        "Initiating tracking with payload:",
-        JSON.stringify(payload, null, 2)
-      );
-
-      // Call API
-      const response = await fetch(
-        "https://besecridetracking.azurewebsites.net/initiate-tracking",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
-      }
-
-      const result = await response.json();
-      console.log("=== API RESPONSE ===");
-      console.log("Full response:", result);
-      console.log("JSON:", JSON.stringify(result, null, 2));
-      console.log("==================");
-
-      // Extract tracking request ID from response
-      const trackingRequestId = result.Id || result.id || newRideId;
-      console.log("Tracking Request ID:", trackingRequestId);
+      debugLog("Tracking initiated:", result);
 
       toast({
         title: "Tracking Started",
         description: "Your ride tracking has been initiated successfully.",
       });
 
-      // Extract driver info from response
-      const driverInfo = result.DriverInfo;
-      const driverData = driverInfo
-        ? {
-            firstName: driverInfo.FirstName,
-            lastName: driverInfo.LastName,
-            rating: driverInfo.Rating || 0,
-            carBrand: driverInfo.CarBrand,
-            carModel: driverInfo.CarModel,
-            plateNumber: driverInfo.LicensePlateNumber,
-            pictureUrl: driverInfo.PictureAddress,
-            phone: driverInfo.PhoneNumber,
-          }
-        : null;
+      if (!result.trackingId || result.trackingId === "undefined") {
+        showError(
+          ErrorCode.API_ERROR,
+          "Tracking started but no valid tracking ID was returned.",
+        );
+        return;
+      }
 
-      // Build tracking URL with driver info
-      const trackUrl = `/track?from=${encodeURIComponent(
-        currentLocation
-      )}&to=${encodeURIComponent(destination)}&eta=${eta}${
-        driverId ? `&driverId=${encodeURIComponent(driverId)}` : ""
-      }&trackingId=${encodeURIComponent(
-        trackingRequestId
-      )}&rideId=${encodeURIComponent(newRideId)}&sendingTrackingInfo=true${
-        driverData
-          ? `&driverData=${encodeURIComponent(JSON.stringify(driverData))}`
-          : ""
-      }`;
+      // Build tracking URL using the service
+      const trackUrl = buildTrackingUrl({
+        from: currentLocation,
+        to: destination,
+        eta,
+        trackingId: result.trackingId,
+        driverId: driverId || undefined,
+        driverInfo: result.driverInfo,
+        sendingTrackingInfo: true,
+      });
 
       const message = `I'm taking a ride! Track me here: ${window.location.origin}${trackUrl}`;
       const smsBody = encodeURIComponent(message);
@@ -368,7 +290,7 @@ const RideStart = () => {
       // Check if running in mobile browser or PWA
       const isMobile =
         /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-          navigator.userAgent
+          navigator.userAgent,
         );
 
       if (isMobile) {
@@ -379,12 +301,7 @@ const RideStart = () => {
         navigate(trackUrl);
       }
     } catch (error) {
-      console.error("Failed to initiate tracking:", error);
-      toast({
-        title: "Error",
-        description: "Failed to start ride tracking. Please try again.",
-        variant: "destructive",
-      });
+      handleApiError(error);
     } finally {
       setIsSubmitting(false);
     }

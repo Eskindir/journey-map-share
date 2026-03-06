@@ -5,6 +5,17 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Star,
   MapPin,
   Navigation,
@@ -14,12 +25,25 @@ import {
   MessageSquare,
   Car,
   ShieldAlert,
+  StopCircle,
+  Loader2,
 } from "lucide-react";
 import MapView from "@/components/MapView";
 import AlertBanner from "@/components/AlertBanner";
 import driverPhoto from "@/assets/driver-photo.jpg";
 import { notificationService } from "@/lib/notifications";
 import { useToast } from "@/hooks/use-toast";
+import { debugLog } from "@/lib/config";
+import {
+  getLatestLocation,
+  sendLocationUpdate,
+  closeTracking,
+  reverseGeocode as apiReverseGeocode,
+  type Position,
+  type CloseTrackingRequest,
+} from "@/lib/api";
+import { parseGPSCoordinates } from "@/lib/validation";
+import { handleApiError, handleGeolocationError } from "@/lib/errors";
 
 const TrackRide = () => {
   const navigate = useNavigate();
@@ -31,6 +55,8 @@ const TrackRide = () => {
   const [alerts, setAlerts] = useState<string[]>([]);
   const [sosValue, setSosValue] = useState([0]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isEndingRide, setIsEndingRide] = useState(false);
+  const [showEndRideDialog, setShowEndRideDialog] = useState(false);
   const [currentPosition, setCurrentPosition] = useState<{
     latitude: number;
     longitude: number;
@@ -47,8 +73,7 @@ const TrackRide = () => {
   const eta = parseInt(searchParams.get("eta") || "20");
   const sendingTrackingInfo =
     searchParams.get("sendingTrackingInfo") === "true";
-  const trackingId =
-    searchParams.get("trackingId") || searchParams.get("rideId") || "";
+  const trackingId = searchParams.get("trackingId") || "";
   const driverId = searchParams.get("driverId") || "";
 
   // Parse driver info from query string
@@ -81,20 +106,9 @@ const TrackRide = () => {
     driverPhone,
   });
 
-  // Parse GPS coordinates from query string
-  const parseGPS = (gpsString: string) => {
-    const parts = gpsString.split(",").map((s) => s.trim());
-    if (parts.length === 2) {
-      return {
-        latitude: parseFloat(parts[0]),
-        longitude: parseFloat(parts[1]),
-      };
-    }
-    return null;
-  };
-
-  const initialPosition = parseGPS(from);
-  const destinationPosition = parseGPS(to);
+  // Parse GPS coordinates using validation service
+  const initialPosition = parseGPSCoordinates(from);
+  const destinationPosition = parseGPSCoordinates(to);
 
   // Geocode initial position on mount
   useEffect(() => {
@@ -108,7 +122,7 @@ const TrackRide = () => {
     if (destinationPosition) {
       reverseGeocode(
         destinationPosition.latitude,
-        destinationPosition.longitude
+        destinationPosition.longitude,
       ).then((address) => {
         if (address) {
           setDestinationAddress(address);
@@ -117,26 +131,14 @@ const TrackRide = () => {
     }
   }, []);
 
-  // Reverse geocode coordinates to get address
+  // Use API service for reverse geocoding
   const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
-    try {
-      console.log("Attempting to geocode:", lat, lon);
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&key=AIzaSyDABp7Bg9ODZSE3oFcJ5LpdBz2wLqP7PRg`
-      );
-      const data = await response.json();
-      console.log("Geocoding API response:", data);
-      if (data.results && data.results.length > 0) {
-        const address = data.results[0].formatted_address;
-        console.log("Geocoded address:", address);
-        return address;
-      }
-      console.log("No geocoding results found");
-      return "";
-    } catch (error) {
-      console.error("Geocoding error:", error);
+    const address = await apiReverseGeocode({ latitude: lat, longitude: lon });
+    // Return empty string if we only got back coordinates (fallback)
+    if (address.includes(",") && !address.includes(" ")) {
       return "";
     }
+    return address;
   };
 
   // Update address when position changes
@@ -149,7 +151,7 @@ const TrackRide = () => {
           if (address) {
             setCurrentLocationAddress(address);
           }
-        }
+        },
       );
     }
   }, [currentPosition]);
@@ -162,53 +164,72 @@ const TrackRide = () => {
         {
           sendingTrackingInfo,
           trackingId,
-        }
+        },
       );
       return;
     }
 
     const fetchLocationUpdate = async () => {
       try {
-        console.log("Fetching latest location for trackingId:", trackingId);
-        const response = await fetch(
-          `https://besecridetracking.azurewebsites.net/getlatestlocation/${trackingId}`
-        );
+        debugLog("Fetching latest location for trackingId:", trackingId);
 
-        console.log("Fetch location response status:", response.status);
+        const latestLocation = await getLatestLocation(trackingId);
 
-        if (response.ok) {
-          const data = await response.json();
-          console.log("Fetch location response payload:", data);
+        if (latestLocation) {
+          const endedRideStatuses = [
+            "ArrivedSafely",
+            "RideEndedByDriver",
+            "Cancelled",
+          ];
 
-          if (data.Position) {
-            const newPosition = {
-              latitude: data.Position.Latitude,
-              longitude: data.Position.Longitude,
-            };
-
-            // Update current position
-            setCurrentPosition(newPosition);
-
-            // Add to location history if it's a new position
-            setLocationHistory((prev) => {
-              const lastPos = prev[prev.length - 1];
-              if (
-                !lastPos ||
-                lastPos.latitude !== newPosition.latitude ||
-                lastPos.longitude !== newPosition.longitude
-              ) {
-                return [...prev, newPosition];
-              }
-              return prev;
+          if (
+            !latestLocation.isRideActive ||
+            endedRideStatuses.includes(latestLocation.rideStatus)
+          ) {
+            const params = new URLSearchParams({
+              trackingId,
+              status: latestLocation.rideStatus,
+              viewerType: "watcher",
             });
 
-            console.log("Position updated:", newPosition);
+            if (driverName) {
+              params.set("driverName", driverName);
+            }
+            if (carPlate) {
+              params.set("plateNumber", carPlate);
+            }
+            if (carInfo) {
+              params.set("modelType", carInfo);
+            }
+
+            navigate(`/ride-end?${params.toString()}`);
+            return;
           }
-        } else {
-          console.error("Failed to fetch location:", response.status);
+
+          const newPosition = latestLocation.position;
+
+          // Update current position
+          setCurrentPosition(newPosition);
+
+          // Add to location history if it's a new position
+          setLocationHistory((prev) => {
+            const lastPos = prev[prev.length - 1];
+            if (
+              !lastPos ||
+              lastPos.latitude !== newPosition.latitude ||
+              lastPos.longitude !== newPosition.longitude
+            ) {
+              return [...prev, newPosition];
+            }
+            return prev;
+          });
+
+          debugLog("Position updated:", newPosition);
         }
       } catch (error) {
-        console.error("Error fetching location update:", error);
+        // Log but don't show error to user for polling failures
+        // The retry logic in the API client will handle transient errors
+        debugLog("Error fetching location update:", error);
       }
     };
 
@@ -219,7 +240,14 @@ const TrackRide = () => {
     const interval = setInterval(fetchLocationUpdate, 15000);
 
     return () => clearInterval(interval);
-  }, [sendingTrackingInfo, trackingId]);
+  }, [
+    sendingTrackingInfo,
+    trackingId,
+    navigate,
+    driverName,
+    carPlate,
+    carInfo,
+  ]);
 
   // Send tracking info at intervals if enabled
   useEffect(() => {
@@ -232,25 +260,20 @@ const TrackRide = () => {
       return;
     }
 
-    const sendLocationUpdate = async () => {
+    const sendLocationUpdateFn = async () => {
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           async (position) => {
-            const newPosition = {
+            const newPosition: Position = {
               latitude: position.coords.latitude,
               longitude: position.coords.longitude,
             };
 
-            const payload = {
-              driverId: driverId,
-              trackinngId: trackingId, // Note: API has typo "trackinngId"
-              position: {
-                latitude: newPosition.latitude.toString(),
-                longitude: newPosition.longitude.toString(),
-              },
-            };
-
-            console.log("Sending location update:", payload);
+            debugLog("Sending location update:", {
+              trackingId,
+              driverId,
+              newPosition,
+            });
 
             // Update current position on the map
             setCurrentPosition(newPosition);
@@ -269,47 +292,25 @@ const TrackRide = () => {
             });
 
             try {
-              const response = await fetch(
-                `https://besecridetracking.azurewebsites.net/addgeolocationtoride/${trackingId}`,
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify(payload),
-                }
-              );
-
-              console.log("Location update response status:", response.status);
-
-              const responseData = await response.json();
-              console.log("Location update response payload:", responseData);
-
-              if (response.ok) {
-                console.log("Location update sent successfully");
-              } else {
-                console.error(
-                  "Failed to send location update:",
-                  response.status,
-                  responseData
-                );
-              }
+              await sendLocationUpdate(trackingId, driverId, newPosition);
+              debugLog("Location update sent successfully");
             } catch (error) {
-              console.error("Error sending location update:", error);
+              // Log but continue - the retry logic will handle transient errors
+              debugLog("Error sending location update:", error);
             }
           },
           (error) => {
-            console.error("Geolocation error:", error);
-          }
+            handleGeolocationError(error);
+          },
         );
       }
     };
 
     // Send immediately on mount
-    sendLocationUpdate();
+    sendLocationUpdateFn();
 
     // Then send every 15 seconds
-    const interval = setInterval(sendLocationUpdate, 15000);
+    const interval = setInterval(sendLocationUpdateFn, 15000);
 
     return () => clearInterval(interval);
   }, [sendingTrackingInfo, trackingId, driverId]);
@@ -353,7 +354,7 @@ const TrackRide = () => {
         // Trigger route deviation notification
         notificationService.showNotification(
           "route-deviation",
-          "Your driver has deviated from the planned route."
+          "Your driver has deviated from the planned route.",
         );
       }
     }, 10000);
@@ -403,7 +404,7 @@ const TrackRide = () => {
       // Trigger SOS notification
       await notificationService.showNotification(
         "sos",
-        "EMERGENCY! Your location has been shared with emergency contacts and authorities."
+        "EMERGENCY! Your location has been shared with emergency contacts and authorities.",
       );
 
       toast({
@@ -414,6 +415,62 @@ const TrackRide = () => {
 
       // Reset after activation
       setTimeout(() => setSosValue([0]), 1000);
+    }
+  };
+
+  const handleEndRide = async () => {
+    if (!trackingId) {
+      toast({
+        title: "Error",
+        description: "Missing tracking ID",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsEndingRide(true);
+
+    try {
+      const request: CloseTrackingRequest = {
+        arrivedSafely: true,
+        driverId: driverId || undefined,
+        rideStatus: "ArrivedSafely",
+      };
+
+      debugLog("Closing tracking:", { trackingId, request });
+
+      const result = await closeTracking(trackingId, request);
+
+      debugLog("Tracking closed successfully:", result);
+
+      // Navigate to RideEnd with closure data and driver info
+      const params = new URLSearchParams({
+        trackingId: result.trackingId,
+        status: result.rideStatus,
+        closedAt: result.closedAt,
+        viewerType: "driver",
+        driverName: driverName,
+        plateNumber: carPlate,
+        modelType: carInfo,
+      });
+
+      // Add optional params with encoding for special characters
+      if (driverPhotoUrl && driverPhotoUrl !== driverPhoto) {
+        params.set("pictureUrl", encodeURIComponent(driverPhotoUrl));
+      }
+
+      navigate(`/ride-end?${params.toString()}`);
+    } catch (error) {
+      debugLog("Error closing tracking:", error);
+
+      toast({
+        title: "Failed to end ride",
+        description: "Please try again or check your connection.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsEndingRide(false);
+      setShowEndRideDialog(false);
     }
   };
 
@@ -598,6 +655,60 @@ const TrackRide = () => {
               <span className="text-xs font-medium text-warning-foreground">
                 {alerts[0]}
               </span>
+            </div>
+          )}
+
+          {/* End Ride Button - Only visible for driver mode */}
+          {sendingTrackingInfo && (
+            <div className="pt-2 border-t border-border">
+              <AlertDialog
+                open={showEndRideDialog}
+                onOpenChange={setShowEndRideDialog}
+              >
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="destructive"
+                    className="w-full"
+                    disabled={!isOnline || isEndingRide}
+                    title={
+                      !isOnline
+                        ? "Cannot end ride while offline"
+                        : "End this ride"
+                    }
+                  >
+                    <StopCircle className="h-4 w-4 mr-2" />
+                    End Ride
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>End this ride?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will mark the ride as complete and stop location
+                      tracking. Make sure you have arrived at your destination.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={isEndingRide}>
+                      Cancel
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleEndRide}
+                      disabled={isEndingRide}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      {isEndingRide ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Ending...
+                        </>
+                      ) : (
+                        "End Ride"
+                      )}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           )}
 
