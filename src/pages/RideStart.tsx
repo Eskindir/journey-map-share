@@ -403,8 +403,7 @@ const RideStart = () => {
           </div>
         )}
 
-
-                {/* Select Contacts */}
+        {/* Select Contacts */}
         <div className="space-y-3">
           <Label className="text-base font-medium">Select Contacts</Label>
 
