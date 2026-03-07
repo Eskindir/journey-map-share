@@ -92,23 +92,17 @@ const RideEnd = () => {
           };
       }
     } else {
-      const name = driverName || "The rider";
       switch (status) {
         case "ArrivedSafely":
-          return {
-            title: `${name} has arrived safely!`,
-            subtitle: "The ride has been completed successfully.",
-            isSuccess: true,
-          };
         case "RideEndedByDriver":
           return {
-            title: "Ride finished",
-            subtitle: `${name}'s ride was ended by the driver.`,
+            title: "Rider has arrived safely!",
+            subtitle: "The ride has been completed successfully.",
             isSuccess: true,
           };
         default:
           return {
-            title: `${name}'s ride completed`,
+            title: "Ride completed",
             subtitle: "The ride has ended.",
             isSuccess: true,
           };

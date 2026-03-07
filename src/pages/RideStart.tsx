@@ -36,6 +36,7 @@ const RideStart = () => {
   const [deviceCode, setDeviceCode] = useState("");
   const [rideId, setRideId] = useState("");
   const [plateNumber, setPlateNumber] = useState("");
+  const [driverData, setDriverData] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Check if Contact Picker API is supported
@@ -94,6 +95,12 @@ const RideStart = () => {
     const plateNumberParam = searchParams.get("plateNumber");
     if (plateNumberParam) {
       setPlateNumber(plateNumberParam);
+    }
+
+    // Check for driverData in query string
+    const driverDataParam = searchParams.get("driverData");
+    if (driverDataParam) {
+      setDriverData(driverDataParam);
     }
 
     // Auto-detect user's location
@@ -280,14 +287,23 @@ const RideStart = () => {
         return;
       }
 
+      // Use API driver info, or fall back to URL-provided driverData
+      let finalDriverInfo = result.driverInfo;
+      if (!finalDriverInfo && driverData) {
+        try {
+          finalDriverInfo = JSON.parse(decodeURIComponent(driverData));
+        } catch {
+          // Ignore parse errors
+        }
+      }
+
       // Build tracking URL using the service
       const trackUrl = buildTrackingUrl({
         from: currentLocation,
         to: destination,
-        eta,
         trackingId: result.trackingId,
         driverId: driverId || undefined,
-        driverInfo: result.driverInfo,
+        driverInfo: finalDriverInfo,
         sendingTrackingInfo: true,
       });
 
