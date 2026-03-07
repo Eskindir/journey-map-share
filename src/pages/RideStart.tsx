@@ -297,8 +297,8 @@ const RideStart = () => {
         }
       }
 
-      // Build tracking URL using the service
-      const trackUrl = buildTrackingUrl({
+      // Build tracking URL for the rider (sendingTrackingInfo=true)
+      const riderTrackUrl = buildTrackingUrl({
         from: currentLocation,
         to: destination,
         trackingId: result.trackingId,
@@ -307,22 +307,32 @@ const RideStart = () => {
         sendingTrackingInfo: true,
       });
 
-      const message = `I'm taking a ride! Track me here: ${window.location.origin}${trackUrl}`;
+      // Build tracking URL for watchers/family (sendingTrackingInfo=false)
+      const watcherTrackUrl = buildTrackingUrl({
+        from: currentLocation,
+        to: destination,
+        trackingId: result.trackingId,
+        driverInfo: finalDriverInfo,
+        sendingTrackingInfo: false,
+      });
+
+      const message = `I'm taking a ride! Track me here: ${window.location.origin}${watcherTrackUrl}`;
       const smsBody = encodeURIComponent(message);
       const phoneNumbers = contacts.join(",");
 
-      // Check if running in mobile browser or PWA
+      // Navigate rider to tracking view first
+      navigate(riderTrackUrl);
+
+      // Then open SMS app to send watcher link
       const isMobile =
         /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
           navigator.userAgent,
         );
 
       if (isMobile) {
-        // Try to open SMS app on mobile
-        window.location.href = `sms:${phoneNumbers}?body=${smsBody}`;
-      } else {
-        // Navigate to tracking view on browser
-        navigate(trackUrl);
+        setTimeout(() => {
+          window.location.href = `sms:${phoneNumbers}?body=${smsBody}`;
+        }, 500);
       }
     } catch (error) {
       handleApiError(error);
