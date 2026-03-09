@@ -70,9 +70,19 @@ const TrackRide = () => {
   const driverDataParam = searchParams.get("driverData");
   console.log("Raw driverData param:", driverDataParam);
 
-  const driverInfo = driverDataParam
-    ? JSON.parse(decodeURIComponent(driverDataParam))
-    : null;
+  const driverInfo = (() => {
+    if (!driverDataParam) return null;
+    try {
+      return JSON.parse(driverDataParam);
+    } catch {
+      try {
+        return JSON.parse(decodeURIComponent(driverDataParam));
+      } catch {
+        console.warn("Failed to parse driverData:", driverDataParam);
+        return null;
+      }
+    }
+  })();
   console.log("Parsed driver info:", driverInfo);
 
   const driverName = driverInfo
@@ -369,6 +379,17 @@ const TrackRide = () => {
     setIsEndingRide(true);
 
     try {
+      // Send a final location update with "ArrivedSafely" status
+      // so the watcher's polling detects the ride end immediately
+      if (currentPosition && driverId) {
+        try {
+          await sendLocationUpdate(trackingId, driverId, currentPosition, "ArrivedSafely");
+          debugLog("Final location update sent with ArrivedSafely status");
+        } catch (err) {
+          debugLog("Failed to send final location update:", err);
+        }
+      }
+
       const request: CloseTrackingRequest = {
         arrivedSafely: true,
         driverId: driverId || undefined,

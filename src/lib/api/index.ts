@@ -16,12 +16,14 @@ export {
   closeTracking,
   buildTrackingUrl,
   generateRideId,
+  getTrackingInfo,
 } from './tracking';
 export type {
   InitiateTrackingResult,
   LatestLocationResult,
   SendLocationResult,
   CloseTrackingResult,
+  GetTrackingResult,
 } from './tracking';
 
 // Geocoding API
@@ -53,6 +55,7 @@ export {
   InitiateTrackingResponseSchema,
   AddGeolocationRequestSchema,
   AddGeolocationResponseSchema,
+  GetTrackingResponseSchema,
   LocationUpdateRequestSchema,
   LocationDataSchema,
   LatestLocationResponseSchema,
@@ -83,6 +86,7 @@ export type {
   GeocodingResponse,
   ApiError,
   ApiResult,
+  NormalizedRiderInfo,
 } from './types';
 // SOS Types
 export {

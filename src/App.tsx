@@ -10,6 +10,7 @@ import NotificationsTest from "./pages/NotificationsTest";
 import NotFound from "./pages/NotFound";
 import SOSEmergency from "./pages/SOSEmergency";
 import TrackRedirect from "./pages/TrackRedirect";
+import StartRedirect from "./pages/StartRedirect";
 import InstallPWA from "./components/InstallPWA";
 
 const queryClient = new QueryClient();
@@ -28,6 +29,7 @@ const App = () => (
           <Route path="/notifications" element={<NotificationsTest />} />
           <Route path="/t/:trackingId" element={<TrackRedirect />} />
           <Route path="/sos/:sosId" element={<SOSEmergency />} />
+          <Route path="/start/:trackingId" element={<StartRedirect />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
