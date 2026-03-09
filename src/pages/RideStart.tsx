@@ -307,16 +307,7 @@ const RideStart = () => {
         sendingTrackingInfo: true,
       });
 
-      // Build tracking URL for watchers/family (sendingTrackingInfo=false)
-      const watcherTrackUrl = buildTrackingUrl({
-        from: currentLocation,
-        to: destination,
-        trackingId: result.trackingId,
-        driverInfo: finalDriverInfo,
-        sendingTrackingInfo: false,
-      });
-
-      const message = `I'm taking a ride! Track me here: ${window.location.origin}${watcherTrackUrl}`;
+      const message = `I'm taking a ride! Track me here: ${window.location.origin}/t/${result.trackingId}`;
       const smsBody = encodeURIComponent(message);
       const phoneNumbers = contacts.join(",");
 

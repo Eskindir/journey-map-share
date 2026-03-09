@@ -8,6 +8,8 @@ import TrackRide from "./pages/TrackRide";
 import RideEnd from "./pages/RideEnd";
 import NotificationsTest from "./pages/NotificationsTest";
 import NotFound from "./pages/NotFound";
+import SOSEmergency from "./pages/SOSEmergency";
+import TrackRedirect from "./pages/TrackRedirect";
 import InstallPWA from "./components/InstallPWA";
 
 const queryClient = new QueryClient();
@@ -24,6 +26,8 @@ const App = () => (
           <Route path="/track" element={<TrackRide />} />
           <Route path="/ride-end" element={<RideEnd />} />
           <Route path="/notifications" element={<NotificationsTest />} />
+          <Route path="/t/:trackingId" element={<TrackRedirect />} />
+          <Route path="/sos/:sosId" element={<SOSEmergency />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

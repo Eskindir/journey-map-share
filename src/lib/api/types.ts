@@ -261,6 +261,110 @@ export const CloseTrackingResponseSchema = z
   }));
 export type CloseTrackingResponse = z.infer<typeof CloseTrackingResponseSchema>;
 
+
+// =============================================================================
+// SOS Emergency Types
+// =============================================================================
+
+/**
+ * Request payload for creating an SOS alert (driver emergency)
+ */
+export const CreateSOSRequestSchema = z.object({
+  driverId: z.string(),
+  driverPosition: PositionSchema,
+  driverName: z.string(),
+  driverPhone: z.string(),
+  driverPlateNumber: z.string(),
+  vehicleModel: z.string(),
+});
+export type CreateSOSRequest = z.infer<typeof CreateSOSRequestSchema>;
+
+/**
+ * Response from creating an SOS alert.
+ * Handles both PascalCase (C# backend) and camelCase property names.
+ */
+export const CreateSOSResponseSchema = z
+  .object({
+    sosId: z.string().optional(),
+    SosId: z.string().optional(),
+    id: z.string().optional(),
+    Id: z.string().optional(),
+    message: z.string().optional(),
+    Message: z.string().optional(),
+  })
+  .transform((data) => ({
+    sosId: data.sosId ?? data.SosId ?? data.id ?? data.Id ?? '',
+    message: data.message ?? data.Message ?? '',
+  }));
+export type CreateSOSResponse = z.infer<typeof CreateSOSResponseSchema>;
+
+/**
+ * Response position for SOS polling.
+ * Handles both PascalCase and camelCase.
+ */
+const SOSPositionSchema = z
+  .object({
+    latitude: z.number().optional(),
+    Latitude: z.number().optional(),
+    longitude: z.number().optional(),
+    Longitude: z.number().optional(),
+  })
+  .transform((data) => ({
+    latitude: data.latitude ?? data.Latitude ?? 0,
+    longitude: data.longitude ?? data.Longitude ?? 0,
+  }));
+
+/**
+ * Response from polling SOS status (GET /api/sos/{sosId}).
+ * Handles both PascalCase (C# backend) and camelCase property names.
+ */
+export const SOSStatusResponseSchema = z
+  .object({
+    sosId: z.string().optional(),
+    SosId: z.string().optional(),
+    id: z.string().optional(),
+    Id: z.string().optional(),
+    driverId: z.string().optional(),
+    DriverId: z.string().optional(),
+    driverName: z.string().optional(),
+    DriverName: z.string().optional(),
+    driverPhone: z.string().optional(),
+    DriverPhone: z.string().optional(),
+    driverPlateNumber: z.string().optional(),
+    DriverPlateNumber: z.string().optional(),
+    vehicleModel: z.string().optional(),
+    VehicleModel: z.string().optional(),
+    driverPosition: SOSPositionSchema.optional(),
+    DriverPosition: SOSPositionSchema.optional(),
+    position: SOSPositionSchema.optional(),
+    Position: SOSPositionSchema.optional(),
+    isActive: z.boolean().optional(),
+    IsActive: z.boolean().optional(),
+    createdAt: z.string().optional(),
+    CreatedAt: z.string().optional(),
+  })
+  .transform((data) => ({
+    sosId: data.sosId ?? data.SosId ?? data.id ?? data.Id ?? '',
+    driverId: data.driverId ?? data.DriverId ?? '',
+    driverName: data.driverName ?? data.DriverName ?? '',
+    driverPhone: data.driverPhone ?? data.DriverPhone ?? '',
+    driverPlateNumber: data.driverPlateNumber ?? data.DriverPlateNumber ?? '',
+    vehicleModel: data.vehicleModel ?? data.VehicleModel ?? '',
+    driverPosition: data.driverPosition ?? data.DriverPosition ?? data.position ?? data.Position ?? { latitude: 0, longitude: 0 },
+    isActive: data.isActive ?? data.IsActive ?? true,
+    createdAt: data.createdAt ?? data.CreatedAt ?? '',
+  }));
+export type SOSStatusResponse = z.infer<typeof SOSStatusResponseSchema>;
+
+/**
+ * Request payload for adding SOS geolocation update
+ */
+export const AddSOSGeolocationRequestSchema = z.object({
+  driverId: z.string(),
+  position: PositionSchema,
+});
+export type AddSOSGeolocationRequest = z.infer<typeof AddSOSGeolocationRequestSchema>;
+
 // =============================================================================
 // Google Maps Geocoding Types
 // =============================================================================
