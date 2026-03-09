@@ -31,6 +31,17 @@ export {
   batchReverseGeocode,
 } from './geocoding';
 
+
+// SOS Emergency API
+export {
+  createSOS,
+  getSOSStatus,
+  addSOSGeolocation,
+} from './sos';
+export type {
+  CreateSOSResult,
+  SOSStatusResult,
+} from './sos';
 // Types
 export {
   PositionSchema,
@@ -73,3 +84,18 @@ export type {
   ApiError,
   ApiResult,
 } from './types';
+// SOS Types
+export {
+  CreateSOSRequestSchema,
+  CreateSOSResponseSchema,
+  SOSStatusResponseSchema,
+  AddSOSGeolocationRequestSchema,
+} from './types';
+
+export type {
+  CreateSOSRequest,
+  CreateSOSResponse,
+  SOSStatusResponse,
+  AddSOSGeolocationRequest,
+} from './types';
+
