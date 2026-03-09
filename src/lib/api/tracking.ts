@@ -22,6 +22,8 @@ import {
   RideStatus,
   normalizeDriverInfo,
   NormalizedDriverInfo,
+  NormalizedRiderInfo,
+  GetTrackingResponseSchema,
 } from './types';
 import { debugLog } from '@/lib/config';
 
@@ -286,6 +288,131 @@ export async function closeTracking(
   };
 }
 
+/**
+ * Result of fetching tracking info
+ */
+export interface GetTrackingResult {
+  deviceCode: string;
+  rideId: string;
+  trackingRecipients: string;
+  initialPosition: Position;
+  destinationPosition: Position;
+  driverInfo: NormalizedDriverInfo | null;
+  riderInfo: NormalizedRiderInfo | null;
+  destinationAddress: string;
+  eta: number | undefined;
+}
+
+/**
+ * Fetch tracking information by tracking ID
+ *
+ * @param trackingId - Tracking session identifier
+ * @returns Tracking info with driver, rider, and position data
+ */
+export async function getTrackingInfo(
+  trackingId: string
+): Promise<GetTrackingResult> {
+  debugLog('Fetching tracking info for:', trackingId);
+
+  const response = await apiGet<unknown>(`/tracking/${trackingId}`);
+
+  // Log raw response for debugging
+  console.log('Raw tracking API response:', JSON.stringify(response, null, 2));
+
+  const parseResult = GetTrackingResponseSchema.safeParse(response);
+
+  if (!parseResult.success) {
+    debugLog('Tracking info validation warning:', parseResult.error);
+  }
+
+  // Normalize driver info (with fallback for schema validation failure)
+  let driverInfo: NormalizedDriverInfo | null = null;
+  const r = response as Record<string, unknown>;
+  const rawDriver = parseResult.success
+    ? parseResult.data.driverInfo
+    : (r.driverInfo ?? r.DriverInfo) as Record<string, unknown> | undefined;
+
+  if (rawDriver) {
+    const d = rawDriver as Record<string, unknown>;
+    const deviceCode = parseResult.success
+      ? parseResult.data.deviceCode
+      : ((r.deviceCode ?? r.DeviceCode ?? r.driverIdFromDispatchService ?? r.DriverIdFromDispatchService ?? r.driverId ?? r.DriverId) as string) || '';
+    driverInfo = {
+      driverId: deviceCode,
+      plateNumber: (d.plateNumber ?? d.PlateNumber ?? d.licensePlateNumber ?? d.LicensePlateNumber ?? '') as string,
+      modelType: (d.carModel ?? d.CarModel ?? d.modelType ?? d.ModelType ?? '') as string,
+      firstName: (d.firstName ?? d.FirstName ?? null) as string | null,
+      lastName: (d.lastName ?? d.LastName ?? null) as string | null,
+      rating: (d.rating ?? d.Rating ?? 0) as number,
+      carBrand: (d.carBrand ?? d.CarBrand ?? null) as string | null,
+      carModel: (d.carModel ?? d.CarModel ?? null) as string | null,
+      pictureUrl: (d.pictureUrl ?? d.PictureUrl ?? d.pictureAddress ?? d.PictureAddress ?? null) as string | null,
+      phone: (d.phone ?? d.Phone ?? d.phoneNumber ?? d.PhoneNumber ?? null) as string | null,
+    };
+    debugLog('Normalized driver info:', driverInfo);
+  }
+
+  // Normalize rider info (with fallback for schema validation failure)
+  let riderInfo: NormalizedRiderInfo | null = null;
+  const rawRider = parseResult.success
+    ? parseResult.data.riderInfo
+    : (r.riderInfo ?? r.RiderInfo) as Record<string, unknown> | undefined;
+
+  if (rawRider) {
+    const ri = rawRider as Record<string, unknown>;
+    riderInfo = {
+      firstName: ((ri.firstName ?? ri.FirstName) as string) || '',
+      lastName: ((ri.lastName ?? ri.LastName) as string) || '',
+      phoneNumber: ((ri.phoneNumber ?? ri.PhoneNumber) as string) || '',
+    };
+  }
+
+  // Extract top-level fields with fallback for schema failure
+  const deviceCode = parseResult.success
+    ? parseResult.data.deviceCode
+    : ((r.deviceCode ?? r.DeviceCode ?? r.driverIdFromDispatchService ?? r.DriverIdFromDispatchService ?? r.driverId ?? r.DriverId) as string) || '';
+  const rideId = parseResult.success
+    ? parseResult.data.rideId
+    : ((r.rideId ?? r.RideId) as string) || '';
+  const trackingRecipients = parseResult.success
+    ? parseResult.data.trackingRecipients
+    : ((r.trackingRecipients ?? r.TrackingRecipients) as string) || '';
+  const destAddr = parseResult.success
+    ? parseResult.data.destinationAddress
+    : ((r.destinationAddress ?? r.DestinationAddress) as string) || '';
+
+  // Extract positions with fallback
+  const extractPos = (obj: unknown): Position => {
+    if (!obj || typeof obj !== 'object') return { latitude: 0, longitude: 0 };
+    const p = obj as Record<string, unknown>;
+    return {
+      latitude: ((p.latitude ?? p.Latitude) as number) || 0,
+      longitude: ((p.longitude ?? p.Longitude) as number) || 0,
+    };
+  };
+
+  const initialPosition = parseResult.success
+    ? parseResult.data.initialPosition
+    : extractPos(r.initialPosition ?? r.InitialPosition);
+  const destinationPosition = parseResult.success
+    ? parseResult.data.destinationPosition
+    : extractPos(r.destinationPosition ?? r.DestinationPosition);
+
+  const result: GetTrackingResult = {
+    deviceCode,
+    rideId,
+    trackingRecipients,
+    initialPosition,
+    destinationPosition,
+    driverInfo,
+    riderInfo,
+    destinationAddress: destAddr,
+    eta: parseResult.success ? parseResult.data.eta : ((r.eta ?? r.ETA ?? r.Eta) as number | undefined),
+  };
+
+  debugLog('Tracking info fetched:', result);
+  return result;
+}
 /**
  * Build tracking URL with all necessary parameters
  *

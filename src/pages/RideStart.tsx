@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { MapPin, Navigation, User, X, Bell } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
 import { debugLog } from "@/lib/config";
 import {
@@ -38,6 +39,12 @@ const RideStart = () => {
   const [plateNumber, setPlateNumber] = useState("");
   const [driverData, setDriverData] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [riderFirstName, setRiderFirstName] = useState("");
+  const [riderLastName, setRiderLastName] = useState("");
+  const [riderPhone, setRiderPhone] = useState("");
+  const [isFromTracking, setIsFromTracking] = useState(false);
+  const [preTrackingId, setPreTrackingId] = useState("");
+  const [locationProgress, setLocationProgress] = useState(0);
 
   // Check if Contact Picker API is supported
   useEffect(() => {
@@ -56,21 +63,33 @@ const RideStart = () => {
 
   // Auto-detect location on mount and handle query string destination
   useEffect(() => {
+    // Check for destination address from URL first (from /start redirect)
+    const destAddressFromUrl = searchParams.get("destinationAddress");
+
     // Check for destination in query string
     const destinationParam =
       searchParams.get("destination") || searchParams.get("to");
     if (destinationParam) {
       console.log("Destination param:", destinationParam);
       setDestination(destinationParam);
-      // Reverse geocode destination if it's coordinates
-      const coords = parseGPSCoordinates(destinationParam);
-      console.log("Parsed destination coords:", coords);
-      if (coords) {
-        reverseGeocode(coords.latitude, coords.longitude).then((address) => {
-          console.log("Setting destination address:", address);
-          setDestinationAddress(address);
-        });
+
+      if (destAddressFromUrl) {
+        // Use the address directly from URL - no need to reverse geocode
+        console.log("Using destination address from URL:", destAddressFromUrl);
+        setDestinationAddress(destAddressFromUrl);
+      } else {
+        // Reverse geocode destination if it's coordinates
+        const coords = parseGPSCoordinates(destinationParam);
+        console.log("Parsed destination coords:", coords);
+        if (coords) {
+          reverseGeocode(coords.latitude, coords.longitude).then((address) => {
+            console.log("Setting destination address:", address);
+            setDestinationAddress(address);
+          });
+        }
       }
+    } else if (destAddressFromUrl) {
+      setDestinationAddress(destAddressFromUrl);
     }
 
     // Check for driverId in query string
@@ -101,6 +120,47 @@ const RideStart = () => {
     const driverDataParam = searchParams.get("driverData");
     if (driverDataParam) {
       setDriverData(driverDataParam);
+    }
+
+    // Check for rider info in query string
+    const riderFirstNameParam = searchParams.get("riderFirstName");
+    if (riderFirstNameParam) {
+      setRiderFirstName(riderFirstNameParam);
+    }
+    const riderLastNameParam = searchParams.get("riderLastName");
+    if (riderLastNameParam) {
+      setRiderLastName(riderLastNameParam);
+    }
+    const riderPhoneParam = searchParams.get("riderPhone");
+    if (riderPhoneParam) {
+      setRiderPhone(riderPhoneParam);
+    }
+
+    // Check for contacts in query string (comma-separated)
+    const contactsParam = searchParams.get("contacts");
+    if (contactsParam) {
+      const contactList = contactsParam.split(",").map(c => c.trim()).filter(Boolean);
+      if (contactList.length > 0) {
+        setContacts(contactList);
+      }
+    }
+
+    // Check for ETA in query string
+    const etaParam = searchParams.get("eta");
+    if (etaParam) {
+      const parsedEta = parseInt(etaParam, 10);
+      if (!isNaN(parsedEta)) {
+        setEta(parsedEta);
+      }
+    }
+        // Check for pre-initiated tracking
+    const fromTrackingParam = searchParams.get("fromTracking");
+    if (fromTrackingParam === "true") {
+      setIsFromTracking(true);
+    }
+    const trackingIdParam = searchParams.get("trackingId");
+    if (trackingIdParam) {
+      setPreTrackingId(trackingIdParam);
     }
 
     // Auto-detect user's location
@@ -165,6 +225,25 @@ const RideStart = () => {
       );
     }
   };
+
+  // Loading progress bar effect
+  useEffect(() => {
+    if (!isLoadingLocation) {
+      setLocationProgress(100);
+      return;
+    }
+    setLocationProgress(0);
+    const interval = setInterval(() => {
+      setLocationProgress((prev) => {
+        if (prev >= 90) {
+          clearInterval(interval);
+          return 90;
+        }
+        return prev + 10;
+      });
+    }, 800);
+    return () => clearInterval(interval);
+  }, [isLoadingLocation]);
 
   const addContact = () => {
     if (contactInput.trim() && !contacts.includes(contactInput.trim())) {
@@ -245,55 +324,79 @@ const RideStart = () => {
     setIsSubmitting(true);
 
     try {
-      // Use rideId from query string only; send empty string if not present
-      const newRideId = rideId || "";
+      let trackingIdToUse: string;
+      let finalDriverInfoToUse: any = null;
 
-      // Use driverId as deviceCode if deviceCode is not provided
-      const finalDeviceCode = deviceCode || driverId || "UNKNOWN";
+      if (isFromTracking && preTrackingId) {
+        // Pre-initiated flow: tracking already exists, skip initiateTracking
+        trackingIdToUse = preTrackingId;
+        debugLog("Using pre-initiated tracking:", preTrackingId);
 
-      // Call tracking API using the service
-      const result = await initiateTracking({
-        deviceCode: finalDeviceCode,
-        rideId: newRideId,
-        trackingRecipients: contacts.join(","),
-        initialPosition,
-        destinationPosition,
-        isRideActive: true,
-        driverIdFromDispatchService: finalDeviceCode,
-        driverPlateNumber: plateNumber || "N/A",
-        modelType: "Besec.Tracking.Models.TrackingRequest",
-      });
+        // Persist contacts for SOS feature
+        sessionStorage.setItem(
+          `sos-contacts-${preTrackingId}`,
+          JSON.stringify(contacts),
+        );
 
-      debugLog("Tracking initiated:", result);
+        // Use URL-provided driverData
+        if (driverData) {
+          try {
+            finalDriverInfoToUse = JSON.parse(decodeURIComponent(driverData));
+          } catch {
+            // Ignore parse errors
+          }
+        }
 
-      // Persist contacts for SOS feature
-      if (result.trackingId) {
+        toast({
+          title: "Tracking Started",
+          description: "Your ride tracking has been initiated successfully.",
+        });
+      } else {
+        // Normal flow: initiate new tracking
+        const newRideId = rideId || "";
+        const finalDeviceCode = deviceCode || driverId || "UNKNOWN";
+
+        const result = await initiateTracking({
+          deviceCode: finalDeviceCode,
+          rideId: newRideId,
+          trackingRecipients: contacts.join(","),
+          initialPosition,
+          destinationPosition,
+          isRideActive: true,
+          driverIdFromDispatchService: finalDeviceCode,
+          driverPlateNumber: plateNumber || "N/A",
+          modelType: "Besec.Tracking.Models.TrackingRequest",
+        });
+
+        debugLog("Tracking initiated:", result);
+
+        if (!result.trackingId || result.trackingId === "undefined") {
+          showError(
+            ErrorCode.API_ERROR,
+            "Tracking started but no valid tracking ID was returned.",
+          );
+          return;
+        }
+
+        trackingIdToUse = result.trackingId;
+
         sessionStorage.setItem(
           `sos-contacts-${result.trackingId}`,
           JSON.stringify(contacts),
         );
-      }
 
-      toast({
-        title: "Tracking Started",
-        description: "Your ride tracking has been initiated successfully.",
-      });
+        toast({
+          title: "Tracking Started",
+          description: "Your ride tracking has been initiated successfully.",
+        });
 
-      if (!result.trackingId || result.trackingId === "undefined") {
-        showError(
-          ErrorCode.API_ERROR,
-          "Tracking started but no valid tracking ID was returned.",
-        );
-        return;
-      }
-
-      // Use API driver info, or fall back to URL-provided driverData
-      let finalDriverInfo = result.driverInfo;
-      if (!finalDriverInfo && driverData) {
-        try {
-          finalDriverInfo = JSON.parse(decodeURIComponent(driverData));
-        } catch {
-          // Ignore parse errors
+        finalDriverInfoToUse = result.driverInfo;
+        if (!finalDriverInfoToUse && driverData) {
+          try {
+            finalDriverInfoToUse = JSON.parse(decodeURIComponent(driverData));
+          } catch {
+            // Ignore parse errors
+          }
         }
       }
 
@@ -301,13 +404,13 @@ const RideStart = () => {
       const riderTrackUrl = buildTrackingUrl({
         from: currentLocation,
         to: destination,
-        trackingId: result.trackingId,
-        driverId: driverId || undefined,
-        driverInfo: finalDriverInfo,
+        trackingId: trackingIdToUse,
+        driverId: driverId || deviceCode || finalDriverInfoToUse?.driverId || preTrackingId || undefined,
+        driverInfo: finalDriverInfoToUse,
         sendingTrackingInfo: true,
       });
 
-      const message = `I'm taking a ride! Track me here: ${window.location.origin}/t/${result.trackingId}`;
+      const message = `I'm taking a ride! Track me here: ${window.location.origin}/t/${trackingIdToUse}`;
       const smsBody = encodeURIComponent(message);
       const phoneNumbers = contacts.join(",");
 
@@ -383,6 +486,30 @@ const RideStart = () => {
           )}
         </div>
 
+        {/* Location Progress Bar */}
+          {isLoadingLocation && (
+            <Progress value={locationProgress} className="h-1.5" />
+          )}
+
+        {/* Rider Information (read-only) */}
+        {(riderFirstName || riderLastName || riderPhone) && (
+          <div className="space-y-2">
+            <Label className="text-base font-medium">Rider Information</Label>
+            <div className="space-y-2 p-3 bg-muted rounded-lg">
+              {(riderFirstName || riderLastName) && (
+                <Input
+                  value={`${riderFirstName} ${riderLastName}`.trim()}
+                  disabled
+                  className="bg-muted"
+                />
+              )}
+              {riderPhone && (
+                <Input value={riderPhone} disabled className="bg-muted" />
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Destination */}
         <div className="space-y-2">
           <Label htmlFor="destination" className="text-base font-medium">
@@ -403,6 +530,21 @@ const RideStart = () => {
               {destinationAddress}
             </p>
           )}
+        </div>
+
+        {/* Estimated Time of Arrival */}
+        <div className="space-y-2">
+          <Label htmlFor="eta" className="text-base font-medium">
+            Estimated Time (minutes)
+          </Label>
+          <Input
+            id="eta"
+            type="number"
+            placeholder="Enter ETA in minutes"
+            value={eta || ""}
+            onChange={(e) => setEta(parseInt(e.target.value, 10) || 0)}
+            min={1}
+          />
         </div>
 
         {/* Driver ID (readonly if from query string) */}

@@ -39,6 +39,7 @@ export type StringPosition = z.infer<typeof StringPositionSchema>;
  * Ride status enum matching backend RideStatus values
  */
 export const RideStatusSchema = z.enum([
+  'Initiated',
   'Ongoing',
   'ArrivedSafely',
   'RideEndedByDriver',
@@ -214,11 +215,17 @@ export const LatestLocationResponseSchema = z
     RideStatus: RideStatusSchema.optional(),
     isRideActive: z.boolean().optional(),
     IsRideActive: z.boolean().optional(),
+    eta: z.number().optional(),
+    ETA: z.number().optional(),
+    Eta: z.number().optional(),
+    estimatedTimeOfArrival: z.number().optional(),
+    EstimatedTimeOfArrival: z.number().optional(),
   })
   .transform((data) => ({
     location: data.location ?? data.Location ?? undefined,
     rideStatus: data.rideStatus ?? data.RideStatus ?? 'Ongoing',
     isRideActive: data.isRideActive ?? data.IsRideActive ?? true,
+    eta: data.eta ?? data.ETA ?? data.Eta ?? data.estimatedTimeOfArrival ?? data.EstimatedTimeOfArrival ?? undefined,
   }));
 export type LatestLocationResponse = z.infer<typeof LatestLocationResponseSchema>;
 
@@ -261,6 +268,140 @@ export const CloseTrackingResponseSchema = z
   }));
 export type CloseTrackingResponse = z.infer<typeof CloseTrackingResponseSchema>;
 
+
+
+// =============================================================================
+// Get Tracking Info Types
+// =============================================================================
+
+/**
+ * Normalized rider info for client use
+ */
+export interface NormalizedRiderInfo {
+  firstName: string;
+  lastName: string;
+  phoneNumber: string;
+}
+
+/**
+ * Driver info as returned in tracking object (different from DriverInfoResponseSchema).
+ * Handles both PascalCase (C# backend) and camelCase property names.
+ */
+const TrackingDriverInfoSchema = z
+  .object({
+    firstName: z.string().optional(),
+    FirstName: z.string().optional(),
+    lastName: z.string().optional(),
+    LastName: z.string().optional(),
+    rating: z.number().optional(),
+    Rating: z.number().optional(),
+    carBrand: z.string().optional(),
+    CarBrand: z.string().optional(),
+    carModel: z.string().optional(),
+    CarModel: z.string().optional(),
+    plateNumber: z.string().optional(),
+    PlateNumber: z.string().optional(),
+    licensePlateNumber: z.string().optional(),
+    LicensePlateNumber: z.string().optional(),
+    pictureUrl: z.string().optional(),
+    PictureUrl: z.string().optional(),
+    pictureAddress: z.string().optional(),
+    PictureAddress: z.string().optional(),
+    phone: z.string().optional(),
+    Phone: z.string().optional(),
+    phoneNumber: z.string().optional(),
+    PhoneNumber: z.string().optional(),
+  })
+  .transform((data) => ({
+    firstName: data.firstName ?? data.FirstName ?? null,
+    lastName: data.lastName ?? data.LastName ?? null,
+    rating: data.rating ?? data.Rating ?? 0,
+    carBrand: data.carBrand ?? data.CarBrand ?? null,
+    carModel: data.carModel ?? data.CarModel ?? null,
+    plateNumber: data.plateNumber ?? data.PlateNumber ?? data.licensePlateNumber ?? data.LicensePlateNumber ?? '',
+    pictureUrl: data.pictureUrl ?? data.PictureUrl ?? data.pictureAddress ?? data.PictureAddress ?? null,
+    phone: data.phone ?? data.Phone ?? data.phoneNumber ?? data.PhoneNumber ?? null,
+  }));
+
+/**
+ * Rider info as returned in tracking object.
+ * Handles both PascalCase (C# backend) and camelCase property names.
+ */
+const TrackingRiderInfoSchema = z
+  .object({
+    firstName: z.string().optional(),
+    FirstName: z.string().optional(),
+    lastName: z.string().optional(),
+    LastName: z.string().optional(),
+    phoneNumber: z.string().optional(),
+    PhoneNumber: z.string().optional(),
+  })
+  .transform((data) => ({
+    firstName: data.firstName ?? data.FirstName ?? '',
+    lastName: data.lastName ?? data.LastName ?? '',
+    phoneNumber: data.phoneNumber ?? data.PhoneNumber ?? '',
+  }));
+
+/**
+ * Position schema for tracking response (reuses dual-case pattern).
+ */
+const TrackingPositionSchema = z
+  .object({
+    latitude: z.number().optional(),
+    Latitude: z.number().optional(),
+    longitude: z.number().optional(),
+    Longitude: z.number().optional(),
+  })
+  .transform((data) => ({
+    latitude: data.latitude ?? data.Latitude ?? 0,
+    longitude: data.longitude ?? data.Longitude ?? 0,
+  }));
+
+/**
+ * Response from GET /tracking/{trackingId}.
+ * Returns the full tracking object with driver info, rider info, positions.
+ * Handles both PascalCase (C# backend) and camelCase property names.
+ */
+export const GetTrackingResponseSchema = z
+  .object({
+    deviceCode: z.string().optional(),
+    DeviceCode: z.string().optional(),
+    driverIdFromDispatchService: z.string().optional(),
+    DriverIdFromDispatchService: z.string().optional(),
+    driverId: z.string().optional(),
+    DriverId: z.string().optional(),
+    rideId: z.string().optional(),
+    RideId: z.string().optional(),
+    trackingRecipients: z.string().optional(),
+    TrackingRecipients: z.string().optional(),
+    initialPosition: TrackingPositionSchema.optional(),
+    InitialPosition: TrackingPositionSchema.optional(),
+    destinationPosition: TrackingPositionSchema.optional(),
+    DestinationPosition: TrackingPositionSchema.optional(),
+    destinationAddress: z.string().optional(),
+    DestinationAddress: z.string().optional(),
+    driverInfo: TrackingDriverInfoSchema.optional(),
+    DriverInfo: TrackingDriverInfoSchema.optional(),
+    riderInfo: TrackingRiderInfoSchema.optional(),
+    RiderInfo: TrackingRiderInfoSchema.optional(),
+    rideStatus: RideStatusSchema.optional(),
+    RideStatus: RideStatusSchema.optional(),
+    isRideActive: z.boolean().optional(),
+    IsRideActive: z.boolean().optional(),
+  })
+  .transform((data) => ({
+    deviceCode: data.deviceCode ?? data.DeviceCode ?? data.driverIdFromDispatchService ?? data.DriverIdFromDispatchService ?? data.driverId ?? data.DriverId ?? '',
+    rideId: data.rideId ?? data.RideId ?? '',
+    trackingRecipients: data.trackingRecipients ?? data.TrackingRecipients ?? '',
+    initialPosition: data.initialPosition ?? data.InitialPosition ?? { latitude: 0, longitude: 0 },
+    destinationPosition: data.destinationPosition ?? data.DestinationPosition ?? { latitude: 0, longitude: 0 },
+    destinationAddress: data.destinationAddress ?? data.DestinationAddress ?? '',
+    driverInfo: data.driverInfo ?? data.DriverInfo ?? undefined,
+    riderInfo: data.riderInfo ?? data.RiderInfo ?? undefined,
+    rideStatus: data.rideStatus ?? data.RideStatus ?? 'Initiated',
+    isRideActive: data.isRideActive ?? data.IsRideActive ?? true,
+  }));
+export type GetTrackingResponse = z.infer<typeof GetTrackingResponseSchema>;
 
 // =============================================================================
 // SOS Emergency Types
