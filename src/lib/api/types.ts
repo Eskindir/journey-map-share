@@ -139,7 +139,6 @@ export const AddGeolocationRequestSchema = z.object({
   driverId: z.string(),
   position: PositionSchema,
   trackingId: z.string(),
-  rideStatus: RideStatusSchema,
 });
 export type AddGeolocationRequest = z.infer<typeof AddGeolocationRequestSchema>;
 
@@ -147,10 +146,20 @@ export type AddGeolocationRequest = z.infer<typeof AddGeolocationRequestSchema>;
  * Response from add geolocation endpoint
  */
 export const AddGeolocationResponseSchema = z.object({
-  message: z.string(),
-  geoLocationId: z.string(),
-  timestamp: z.string(), // ISO 8601 format
-});
+  message: z.string().optional(),
+  Message: z.string().optional(),
+  geoLocationId: z.string().optional(),
+  GeoLocationId: z.string().optional(),
+  timestamp: z.string().optional(),
+  Timestamp: z.string().optional(),
+  isTrackingFinished: z.boolean().optional(),
+  IsTrackingFinished: z.boolean().optional(),
+}).transform((data) => ({
+  message: data.message ?? data.Message ?? '',
+  geoLocationId: data.geoLocationId ?? data.GeoLocationId ?? '',
+  timestamp: data.timestamp ?? data.Timestamp ?? '',
+  isTrackingFinished: data.isTrackingFinished ?? data.IsTrackingFinished ?? false,
+}));
 export type AddGeolocationResponse = z.infer<typeof AddGeolocationResponseSchema>;
 
 /**

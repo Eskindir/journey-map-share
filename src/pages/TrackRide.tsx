@@ -301,8 +301,27 @@ const TrackRide = () => {
             });
 
             try {
-              await sendLocationUpdate(trackingId, driverId, newPosition, sosActivated ? "SOS" : "Ongoing");
-              debugLog("Location update sent successfully");
+              const updateResult = await sendLocationUpdate(trackingId, driverId, newPosition);
+              console.log("Location update result:", updateResult);
+              console.log("isTrackingFinished value:", updateResult.isTrackingFinished, "type:", typeof updateResult.isTrackingFinished);
+
+              // Check if tracking was finished by another party
+              if (updateResult.isTrackingFinished === true) {
+                console.warn("Tracking finished detected! Redirecting to ride-end...");
+                const endParams = new URLSearchParams({
+                  trackingId,
+                  status: "ArrivedSafely",
+                  viewerType: "driver",
+                  driverName: driverName,
+                  plateNumber: carPlate,
+                  modelType: carInfo,
+                });
+                if (to) {
+                  endParams.set("destination", to);
+                }
+                navigate(`/ride-end?${endParams.toString()}`);
+                return;
+              }
             } catch (error) {
               // Log but continue - the retry logic will handle transient errors
               debugLog("Error sending location update:", error);
@@ -383,7 +402,7 @@ const TrackRide = () => {
       // so the watcher's polling detects the ride end immediately
       if (currentPosition && driverId) {
         try {
-          await sendLocationUpdate(trackingId, driverId, currentPosition, "ArrivedSafely");
+          await sendLocationUpdate(trackingId, driverId, currentPosition);
           debugLog("Final location update sent with ArrivedSafely status");
         } catch (err) {
           debugLog("Failed to send final location update:", err);

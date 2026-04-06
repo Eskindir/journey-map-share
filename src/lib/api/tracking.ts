@@ -193,6 +193,7 @@ export interface SendLocationResult {
   geoLocationId: string;
   timestamp: string;
   message: string;
+  isTrackingFinished: boolean;
 }
 
 /**
@@ -207,7 +208,6 @@ export async function sendLocationUpdate(
   trackingId: string,
   driverId: string,
   position: Position,
-  rideStatus: RideStatus = 'Ongoing'
 ): Promise<SendLocationResult> {
   debugLog('Sending location update:', { trackingId, driverId, position });
 
@@ -215,10 +215,11 @@ export async function sendLocationUpdate(
     driverId,
     trackingId,
     position,
-    rideStatus,
   };
 
   const response = await apiPost<unknown>(`/addgeolocationtoride/${trackingId}`, request);
+
+  debugLog('Raw API response:', JSON.stringify(response));
 
   // Validate response schema
   const parseResult = AddGeolocationResponseSchema.safeParse(response);
@@ -227,17 +228,29 @@ export async function sendLocationUpdate(
     debugLog('Response validation warning:', parseResult.error);
   }
 
-  const validatedResponse = parseResult.success
-    ? parseResult.data
-    : (response as AddGeolocationResponse);
-
   debugLog('Location update sent successfully');
 
-  return {
-    geoLocationId: validatedResponse.geoLocationId,
-    timestamp: validatedResponse.timestamp,
-    message: validatedResponse.message,
+  if (parseResult.success) {
+    const result = {
+      geoLocationId: parseResult.data.geoLocationId,
+      timestamp: parseResult.data.timestamp,
+      message: parseResult.data.message,
+      isTrackingFinished: parseResult.data.isTrackingFinished,
+    };
+    console.log('sendLocationUpdate parsed result - isTrackingFinished:', result.isTrackingFinished);
+    return result;
+  }
+
+  // Fallback: manually extract from raw response (handles PascalCase)
+  const raw = response as Record<string, unknown>;
+  const result = {
+    geoLocationId: (raw.geoLocationId ?? raw.GeoLocationId ?? '') as string,
+    timestamp: (raw.timestamp ?? raw.Timestamp ?? '') as string,
+    message: (raw.message ?? raw.Message ?? '') as string,
+    isTrackingFinished: ((raw.isTrackingFinished ?? raw.IsTrackingFinished) as boolean) ?? false,
   };
+  console.log('sendLocationUpdate fallback result - isTrackingFinished:', result.isTrackingFinished);
+  return result;
 }
 
 /**
