@@ -33,9 +33,11 @@ import {
   getLatestLocation,
   sendLocationUpdate,
   closeTracking,
+  getTrackingInfo,
   reverseGeocode as apiReverseGeocode,
   type Position,
   type CloseTrackingRequest,
+  type NormalizedDriverInfo,
 } from "@/lib/api";
 import { parseGPSCoordinates } from "@/lib/validation";
 import { handleApiError, handleGeolocationError } from "@/lib/errors";
@@ -45,6 +47,7 @@ const TrackRide = () => {
   const [searchParams] = useSearchParams();
   const [sosValue, setSosValue] = useState([0]);
   const [sosActivated, setSosActivated] = useState(false);
+  const [sosMuted, setSosMuted] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isEndingRide, setIsEndingRide] = useState(false);
   const [showEndRideDialog, setShowEndRideDialog] = useState(false);
@@ -66,34 +69,51 @@ const TrackRide = () => {
   const trackingId = searchParams.get("trackingId") || "";
   const driverId = searchParams.get("driverId") || "";
 
-  // Parse driver info from query string
+  // Parse driver info from query string (rider flow). For the watcher
+  // flow the URL has no driverData param — see the fetch effect below
+  // that populates this state from getTrackingInfo() on mount.
   const driverDataParam = searchParams.get("driverData");
   console.log("Raw driverData param:", driverDataParam);
 
-  const driverInfo = (() => {
-    if (!driverDataParam) return null;
-    try {
-      return JSON.parse(driverDataParam);
-    } catch {
+  const [driverInfo, setDriverInfo] = useState<NormalizedDriverInfo | null>(
+    () => {
+      if (!driverDataParam) return null;
       try {
-        return JSON.parse(decodeURIComponent(driverDataParam));
+        return JSON.parse(driverDataParam);
       } catch {
-        console.warn("Failed to parse driverData:", driverDataParam);
-        return null;
+        try {
+          return JSON.parse(decodeURIComponent(driverDataParam));
+        } catch {
+          console.warn("Failed to parse driverData:", driverDataParam);
+          return null;
+        }
       }
-    }
-  })();
+    },
+  );
   console.log("Parsed driver info:", driverInfo);
 
-  const driverName = driverInfo
-    ? `${driverInfo.firstName} ${driverInfo.lastName}`
-    : "John Driver";
+  const driverName = (() => {
+    if (!driverInfo) return "Driver";
+    const first = driverInfo.firstName?.trim();
+    const last = driverInfo.lastName?.trim();
+    if (first && last) return `${first} ${last}`;
+    if (first) return first;
+    if (last) return last;
+    return "Driver";
+  })();
   const driverRating =
-    driverInfo?.rating !== undefined ? driverInfo.rating : 4.8;
-  const carInfo = driverInfo
-    ? `${driverInfo.carBrand} ${driverInfo.carModel}`
-    : "Toyota Camry";
-  const carPlate = driverInfo?.plateNumber || "ABC-1234";
+    driverInfo?.rating !== undefined && driverInfo?.rating !== null
+      ? driverInfo.rating
+      : 4.8;
+  const carInfo = (() => {
+    if (!driverInfo) return "";
+    const brand = driverInfo.carBrand?.trim();
+    const model =
+      driverInfo.carModel?.trim() || driverInfo.modelType?.trim();
+    if (brand && model) return `${brand} ${model}`;
+    return model || brand || "";
+  })();
+  const carPlate = driverInfo?.plateNumber || "";
   const driverPhotoUrl = driverInfo?.pictureUrl || driverPhoto;
   const driverPhone = driverInfo?.phone || "";
 
@@ -130,6 +150,21 @@ const TrackRide = () => {
       });
     }
   }, []);
+
+  // Watcher (follower) flow: their share link has no driverData URL param,
+  // so fetch the rich tracking record once on mount to populate driver info.
+  useEffect(() => {
+    if (sendingTrackingInfo || !trackingId || driverInfo) return;
+    getTrackingInfo(trackingId)
+      .then((info) => {
+        if (info?.driverInfo) {
+          setDriverInfo(info.driverInfo);
+        }
+      })
+      .catch((err) => {
+        debugLog("Watcher: failed to fetch tracking info:", err);
+      });
+  }, [sendingTrackingInfo, trackingId, driverInfo]);
 
   // Use API service for reverse geocoding
   const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
@@ -176,16 +211,33 @@ const TrackRide = () => {
         const latestLocation = await getLatestLocation(trackingId);
 
         if (latestLocation) {
+          console.log("Watcher poll:", {
+            rideStatus: latestLocation.rideStatus,
+            isRideActive: latestLocation.isRideActive,
+          });
+
+          // Detect SOS FIRST — must fire even if backend also marks the ride
+          // as inactive, otherwise the early-return below would navigate the
+          // watcher away before they ever see the emergency state.
+          // Track the backend value both ways so the alarm stops when SOS is
+          // resolved (e.g. driver pressed "I'm OK" or admin cleared it).
+          setSosActivated(latestLocation.rideStatus === "SOS");
+
           const endedRideStatuses = [
             "ArrivedSafely",
             "RideEndedByDriver",
             "Cancelled",
           ];
 
-          if (
-            !latestLocation.isRideActive ||
-            endedRideStatuses.includes(latestLocation.rideStatus)
-          ) {
+          // Only navigate to RideEnd for "normal" end states.
+          // SOS is an active emergency — keep the watcher on TrackRide so
+          // they see the red banner, hear the siren, and watch the live map.
+          const isNormalEnd =
+            latestLocation.rideStatus !== "SOS" &&
+            (!latestLocation.isRideActive ||
+              endedRideStatuses.includes(latestLocation.rideStatus));
+
+          if (isNormalEnd) {
             const params = new URLSearchParams({
               trackingId,
               status: latestLocation.rideStatus,
@@ -206,13 +258,17 @@ const TrackRide = () => {
               params.set("destination", to);
             }
 
+            // Forward last known driver position (server value preferred, state as fallback)
+            const lastPos = latestLocation.position || currentPosition;
+            if (lastPos) {
+              params.set(
+                "lastPosition",
+                `${lastPos.latitude},${lastPos.longitude}`,
+              );
+            }
+
             navigate(`/ride-end?${params.toString()}`);
             return;
-          }
-
-          // Detect SOS status from backend
-          if (latestLocation.rideStatus === "SOS") {
-            setSosActivated(true);
           }
 
           const newPosition = latestLocation.position;
@@ -245,8 +301,8 @@ const TrackRide = () => {
     // Fetch immediately on mount
     fetchLocationUpdate();
 
-    // Then fetch every 15 seconds
-    const interval = setInterval(fetchLocationUpdate, 15000);
+    // Poll every 5 seconds so emergency state (SOS) reaches the watcher fast.
+    const interval = setInterval(fetchLocationUpdate, 5000);
 
     return () => clearInterval(interval);
   }, [
@@ -301,8 +357,32 @@ const TrackRide = () => {
             });
 
             try {
-              await sendLocationUpdate(trackingId, driverId, newPosition, sosActivated ? "SOS" : "Ongoing");
-              debugLog("Location update sent successfully");
+              const updateResult = await sendLocationUpdate(trackingId, driverId, newPosition);
+              console.log("Location update result:", updateResult);
+              console.log("isTrackingFinished value:", updateResult.isTrackingFinished, "type:", typeof updateResult.isTrackingFinished);
+
+              // Check if tracking was finished by another party
+              if (updateResult.isTrackingFinished === true) {
+                console.warn("Tracking finished detected! Redirecting to ride-end...");
+                const endParams = new URLSearchParams({
+                  trackingId,
+                  status: "ArrivedSafely",
+                  viewerType: "driver",
+                  driverName: driverName,
+                  plateNumber: carPlate,
+                  modelType: carInfo,
+                });
+                if (to) {
+                  endParams.set("destination", to);
+                }
+                // newPosition is the freshest geolocation reading
+                endParams.set(
+                  "lastPosition",
+                  `${newPosition.latitude},${newPosition.longitude}`,
+                );
+                navigate(`/ride-end?${endParams.toString()}`);
+                return;
+              }
             } catch (error) {
               // Log but continue - the retry logic will handle transient errors
               debugLog("Error sending location update:", error);
@@ -337,32 +417,149 @@ const TrackRide = () => {
     };
   }, []);
 
+  // Reset the mute flag whenever SOS clears, so the next emergency
+  // doesn't start silently.
+  useEffect(() => {
+    if (!sosActivated) {
+      setSosMuted(false);
+    }
+  }, [sosActivated]);
 
-  const handleSosChange = (value: number[]) => {
+  // Audible + haptic alarm when SOS is active.
+  // IMPORTANT: only fires for the FOLLOWER (watcher), not the rider — the
+  // rider may have triggered SOS in secret and we don't want to alert anyone
+  // physically near them. Repeats every 60 seconds until the SOS is resolved
+  // by the backend or the follower explicitly mutes it.
+  useEffect(() => {
+    if (sendingTrackingInfo) return; // rider gets visual banner only, no audio/haptic
+    if (!sosActivated) return;
+    if (sosMuted) return;
+
+    const playAlarm = () => {
+      // Haptic feedback (no-op on iOS Safari, harmless elsewhere)
+      if (typeof navigator.vibrate === "function") {
+        try {
+          navigator.vibrate([200, 100, 200, 100, 200, 100, 200]);
+        } catch {
+          // ignore — vibration not allowed
+        }
+      }
+
+      // Audible siren via Web Audio API. No asset file needed.
+      // NOTE: requires a prior user gesture on iOS Safari to be unlocked,
+      // so this may silently no-op if the watcher hasn't interacted yet.
+      // The visual banner is the guaranteed-visible channel.
+      try {
+        const AudioCtx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext })
+            .webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const playTone = (
+          freq: number,
+          startOffset: number,
+          duration: number,
+        ) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.value = freq;
+          const startTime = ctx.currentTime + startOffset;
+          gain.gain.setValueAtTime(0, startTime);
+          gain.gain.linearRampToValueAtTime(0.35, startTime + 0.02);
+          gain.gain.setValueAtTime(0.35, startTime + duration - 0.02);
+          gain.gain.linearRampToValueAtTime(0, startTime + duration);
+          osc.connect(gain).connect(ctx.destination);
+          osc.start(startTime);
+          osc.stop(startTime + duration);
+        };
+        // Siren pattern: alternating high/low for ~2.4s
+        for (let i = 0; i < 4; i++) {
+          playTone(880, i * 0.6, 0.3);
+          playTone(660, i * 0.6 + 0.3, 0.3);
+        }
+        // Close the context after the siren finishes
+        setTimeout(() => ctx.close().catch(() => {}), 3000);
+      } catch (err) {
+        debugLog("SOS sound playback failed:", err);
+      }
+    };
+
+    // Fire once immediately on transition, then every 60 seconds
+    playAlarm();
+    const interval = setInterval(playAlarm, 60000);
+    return () => clearInterval(interval);
+  }, [sosActivated, sosMuted, sendingTrackingInfo]);
+
+  const handleSosChange = async (value: number[]) => {
+    // While SOS is active, the slider stays pinned at 100. Pulling it back
+    // below 95 deactivates the emergency.
+    if (sosActivated) {
+      if (value[0] < 95) {
+        setSosActivated(false);
+        setSosValue([0]);
+
+        const position = currentPosition || initialPosition;
+        if (position && trackingId && driverId) {
+          try {
+            await sendLocationUpdate(
+              trackingId,
+              driverId,
+              position,
+              "Ongoing",
+            );
+            debugLog("SOS deactivated via geolocation update");
+          } catch (error) {
+            debugLog("SOS deactivation failed:", error);
+            toast({
+              title: "SOS clear failed",
+              description:
+                "Could not reach the server. Watchers may still see the alert.",
+              variant: "destructive",
+            });
+          }
+        }
+      } else {
+        // Force the slider to stay at 100 while SOS is engaged
+        setSosValue([100]);
+      }
+      return;
+    }
+
     setSosValue(value);
-    if (value[0] >= 95) {
-      setSosActivated(true);
-      setSosValue([0]);
+    if (value[0] < 95) return;
 
-      // Read contacts from sessionStorage
-      const storedContacts = sessionStorage.getItem(
-        `sos-contacts-${trackingId}`,
-      );
-      const contacts: string[] = storedContacts
-        ? JSON.parse(storedContacts)
-        : [];
+    setSosActivated(true);
+    // Pin the slider at 100 to show SOS is engaged
+    setSosValue([100]);
 
-      // Build SOS message with current location
-      let sosMessage = "EMERGENCY SOS! I need help immediately!";
-      if (currentPosition) {
-        sosMessage += ` My location: https://maps.google.com/?q=${currentPosition.latitude},${currentPosition.longitude}`;
-      }
+    // Need a position to send. Fall back to the initial parsed coordinate
+    // if the geolocation hasn't yielded a fresh fix yet.
+    const position = currentPosition || initialPosition;
+    if (!position || !trackingId || !driverId) {
+      toast({
+        title: "SOS triggered",
+        description:
+          "Emergency state set locally, but could not reach the server.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-      // Open SMS app with contacts
-      if (contacts.length > 0) {
-        const phoneNumbers = contacts.join(",");
-        window.location.href = `sms:${phoneNumbers}?body=${encodeURIComponent(sosMessage)}`;
-      }
+    try {
+      // Flip the ride state via the existing geolocation endpoint
+      // by including rideStatus: "SOS" in the payload.
+      await sendLocationUpdate(trackingId, driverId, position, "SOS");
+      debugLog("SOS reported via geolocation update");
+    } catch (error) {
+      debugLog("SOS geolocation update failed:", error);
+      toast({
+        title: "SOS network error",
+        description:
+          "Could not reach the server. Watchers may not see your alert until connection returns.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -383,7 +580,7 @@ const TrackRide = () => {
       // so the watcher's polling detects the ride end immediately
       if (currentPosition && driverId) {
         try {
-          await sendLocationUpdate(trackingId, driverId, currentPosition, "ArrivedSafely");
+          await sendLocationUpdate(trackingId, driverId, currentPosition);
           debugLog("Final location update sent with ArrivedSafely status");
         } catch (err) {
           debugLog("Failed to send final location update:", err);
@@ -415,6 +612,13 @@ const TrackRide = () => {
 
       if (to) {
         params.set("destination", to);
+      }
+
+      if (currentPosition) {
+        params.set(
+          "lastPosition",
+          `${currentPosition.latitude},${currentPosition.longitude}`,
+        );
       }
 
       // Add optional params with encoding for special characters
@@ -449,9 +653,21 @@ const TrackRide = () => {
           </div>
         )}
         {sosActivated && (
-          <div className="bg-destructive text-destructive-foreground px-4 py-3 text-center font-bold text-sm shadow-md animate-pulse">
-            SOS ACTIVATED - React immediately! Emergency contacts have
-            been notified.
+          <div className="bg-destructive text-destructive-foreground shadow-md animate-pulse">
+            <div className="px-4 py-3 text-center font-bold text-sm">
+              SOS ACTIVATED — Emergency reported. Anyone watching this ride has been alerted.
+            </div>
+            {!sendingTrackingInfo && (
+              <div className="flex justify-center pb-2">
+                <button
+                  type="button"
+                  onClick={() => setSosMuted((m) => !m)}
+                  className="px-3 py-1 text-xs font-semibold rounded bg-destructive-foreground/15 hover:bg-destructive-foreground/25 transition-colors"
+                >
+                  {sosMuted ? "Unmute Alarm" : "Mute Alarm"}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -664,7 +880,9 @@ const TrackRide = () => {
               />
               <div className="flex items-center justify-between mt-1.5">
                 <span className="text-xs text-muted-foreground">
-                  {sosValue[0] < 95 ? "Slide to activate" : "Activating..."}
+                  {sosActivated
+                    ? "Pull back to deactivate"
+                    : "Slide to activate"}
                 </span>
                 <span className="text-xs font-medium text-destructive">
                   {sosValue[0]}%

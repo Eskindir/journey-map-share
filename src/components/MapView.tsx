@@ -7,6 +7,7 @@ import {
   Polyline,
 } from "@react-google-maps/api";
 import { config } from "@/lib/config";
+import { TAXI_MARKER_ICON } from "@/assets/taxi-marker";
 
 interface MapViewProps {
   initialPosition?: { latitude: number; longitude: number };
@@ -22,6 +23,7 @@ const MapView = ({
   showGoogleMap = false,
 }: MapViewProps) => {
   const [progress, setProgress] = useState(0);
+  const [mapLoaded, setMapLoaded] = useState(false);
   const mapRef = useRef<google.maps.Map | null>(null);
 
   // Simulate journey progress
@@ -97,6 +99,7 @@ const MapView = ({
             options={mapOptions}
             onLoad={(map) => {
               mapRef.current = map;
+              setMapLoaded(true);
 
               // Auto-fit bounds to show both markers
               if (initialPosition && destinationPosition) {
@@ -118,18 +121,42 @@ const MapView = ({
               <Polyline path={routePath} options={polylineOptions} />
             )}
 
-            {/* Initial Position Marker */}
-            <Marker
-              position={{
-                lat: initialPosition.latitude,
-                lng: initialPosition.longitude,
-              }}
-              icon={{
-                url: "http://maps.google.com/mapfiles/ms/icons/green-dot.png",
-                scaledSize: { width: 32, height: 32 },
-              }}
-              title="Current Location"
-            />
+            {/* Markers — only render after the Google Maps API is loaded
+                so that google.maps.Size/Point constructors are available */}
+            {mapLoaded && (
+              <>
+                {/* Current/last-known driver position marker (taxi) */}
+                <Marker
+                  position={{
+                    lat: initialPosition.latitude,
+                    lng: initialPosition.longitude,
+                  }}
+                  icon={{
+                    url: TAXI_MARKER_ICON,
+                    scaledSize: new google.maps.Size(40, 48),
+                    anchor: new google.maps.Point(20, 46),
+                  }}
+                  title="Driver Location"
+                  zIndex={2}
+                />
+
+                {/* Destination marker */}
+                {destinationPosition && (
+                  <Marker
+                    position={{
+                      lat: destinationPosition.latitude,
+                      lng: destinationPosition.longitude,
+                    }}
+                    icon={{
+                      url: "http://maps.google.com/mapfiles/ms/icons/red-dot.png",
+                      scaledSize: new google.maps.Size(36, 36),
+                    }}
+                    title="Destination"
+                    zIndex={1}
+                  />
+                )}
+              </>
+            )}
           </GoogleMap>
         </LoadScript>
       </div>

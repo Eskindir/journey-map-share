@@ -93,6 +93,11 @@ export async function initiateTracking(
     (responseRecord.DriverInfo as InitiateTrackingResponse['driverInfo'] | undefined) ??
     validatedResponse.driverInfo;
 
+  console.log(
+    'initiateTracking raw driverInfo from backend:',
+    JSON.stringify(driverInfoFromResponse),
+  );
+
   if (!trackingIdFromResponse.trim()) {
     throw new Error('Initiate tracking response did not include a valid id');
   }
@@ -193,6 +198,7 @@ export interface SendLocationResult {
   geoLocationId: string;
   timestamp: string;
   message: string;
+  isTrackingFinished: boolean;
 }
 
 /**
@@ -201,24 +207,27 @@ export interface SendLocationResult {
  * @param trackingId - The tracking session ID
  * @param driverId - Driver identifier
  * @param position - Current GPS position
+ * @param rideStatus - Optional ride status to set on the backend (e.g. "SOS")
  * @returns Location update result with geolocation ID and timestamp
  */
 export async function sendLocationUpdate(
   trackingId: string,
   driverId: string,
   position: Position,
-  rideStatus: RideStatus = 'Ongoing'
+  rideStatus?: RideStatus,
 ): Promise<SendLocationResult> {
-  debugLog('Sending location update:', { trackingId, driverId, position });
+  debugLog('Sending location update:', { trackingId, driverId, position, rideStatus });
 
   const request: AddGeolocationRequest = {
     driverId,
     trackingId,
     position,
-    rideStatus,
+    ...(rideStatus ? { rideStatus } : {}),
   };
 
   const response = await apiPost<unknown>(`/addgeolocationtoride/${trackingId}`, request);
+
+  debugLog('Raw API response:', JSON.stringify(response));
 
   // Validate response schema
   const parseResult = AddGeolocationResponseSchema.safeParse(response);
@@ -227,17 +236,29 @@ export async function sendLocationUpdate(
     debugLog('Response validation warning:', parseResult.error);
   }
 
-  const validatedResponse = parseResult.success
-    ? parseResult.data
-    : (response as AddGeolocationResponse);
-
   debugLog('Location update sent successfully');
 
-  return {
-    geoLocationId: validatedResponse.geoLocationId,
-    timestamp: validatedResponse.timestamp,
-    message: validatedResponse.message,
+  if (parseResult.success) {
+    const result = {
+      geoLocationId: parseResult.data.geoLocationId,
+      timestamp: parseResult.data.timestamp,
+      message: parseResult.data.message,
+      isTrackingFinished: parseResult.data.isTrackingFinished,
+    };
+    console.log('sendLocationUpdate parsed result - isTrackingFinished:', result.isTrackingFinished);
+    return result;
+  }
+
+  // Fallback: manually extract from raw response (handles PascalCase)
+  const raw = response as Record<string, unknown>;
+  const result = {
+    geoLocationId: (raw.geoLocationId ?? raw.GeoLocationId ?? '') as string,
+    timestamp: (raw.timestamp ?? raw.Timestamp ?? '') as string,
+    message: (raw.message ?? raw.Message ?? '') as string,
+    isTrackingFinished: ((raw.isTrackingFinished ?? raw.IsTrackingFinished) as boolean) ?? false,
   };
+  console.log('sendLocationUpdate fallback result - isTrackingFinished:', result.isTrackingFinished);
+  return result;
 }
 
 /**
