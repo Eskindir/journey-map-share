@@ -73,11 +73,57 @@ export type InitiateTrackingRequest = z.infer<typeof InitiateTrackingRequestSche
 /**
  * Driver information returned from tracking initiation (new format)
  */
-export const DriverInfoResponseSchema = z.object({
-  driverId: z.string(),
-  plateNumber: z.string(),
-  modelType: z.string(),
-});
+export const DriverInfoResponseSchema = z
+  .object({
+    driverId: z.string().optional(),
+    DriverId: z.string().optional(),
+    plateNumber: z.string().optional(),
+    PlateNumber: z.string().optional(),
+    licensePlateNumber: z.string().optional(),
+    LicensePlateNumber: z.string().optional(),
+    modelType: z.string().optional(),
+    ModelType: z.string().optional(),
+    firstName: z.string().nullish(),
+    FirstName: z.string().nullish(),
+    lastName: z.string().nullish(),
+    LastName: z.string().nullish(),
+    rating: z.number().nullish(),
+    Rating: z.number().nullish(),
+    carBrand: z.string().nullish(),
+    CarBrand: z.string().nullish(),
+    carModel: z.string().nullish(),
+    CarModel: z.string().nullish(),
+    pictureUrl: z.string().nullish(),
+    PictureUrl: z.string().nullish(),
+    pictureAddress: z.string().nullish(),
+    PictureAddress: z.string().nullish(),
+    phone: z.string().nullish(),
+    Phone: z.string().nullish(),
+    phoneNumber: z.string().nullish(),
+    PhoneNumber: z.string().nullish(),
+  })
+  .transform((d) => ({
+    driverId: d.driverId ?? d.DriverId ?? '',
+    plateNumber:
+      d.plateNumber ??
+      d.PlateNumber ??
+      d.licensePlateNumber ??
+      d.LicensePlateNumber ??
+      '',
+    modelType: d.modelType ?? d.ModelType ?? '',
+    firstName: d.firstName ?? d.FirstName ?? null,
+    lastName: d.lastName ?? d.LastName ?? null,
+    rating: d.rating ?? d.Rating ?? null,
+    carBrand: d.carBrand ?? d.CarBrand ?? null,
+    carModel: d.carModel ?? d.CarModel ?? null,
+    pictureUrl:
+      d.pictureUrl ??
+      d.PictureUrl ??
+      d.pictureAddress ??
+      d.PictureAddress ??
+      null,
+    phone: d.phone ?? d.Phone ?? d.phoneNumber ?? d.PhoneNumber ?? null,
+  }));
 export type DriverInfoResponse = z.infer<typeof DriverInfoResponseSchema>;
 
 /**
@@ -136,9 +182,12 @@ export type InitiateTrackingResponse = z.infer<typeof InitiateTrackingResponseSc
  * Request payload for adding geolocation to a ride
  */
 export const AddGeolocationRequestSchema = z.object({
+  id: z.string().optional(),
   driverId: z.string(),
   position: PositionSchema,
   trackingId: z.string(),
+  rideStatus: RideStatusSchema.optional(),
+  sosId: z.string().optional(),
 });
 export type AddGeolocationRequest = z.infer<typeof AddGeolocationRequestSchema>;
 
@@ -570,25 +619,56 @@ export type ApiResult<T> =
 // =============================================================================
 
 /**
- * Normalize driver info from new API response format to consistent client format
+ * Normalize driver info from API response format to consistent client format.
+ *
+ * Accepts input in either the transformed camelCase shape (from the schema)
+ * OR the raw PascalCase shape (the C# backend default). Callers in
+ * tracking.ts sometimes bypass the schema transform by extracting fields
+ * directly off the raw response record, so this function must cope with
+ * both.
  */
 export function normalizeDriverInfo(
   driverInfo: DriverInfoResponse | undefined | null
 ): NormalizedDriverInfo | null {
   if (!driverInfo) return null;
-
+  const d = driverInfo as unknown as Record<string, unknown>;
+  const str = (...keys: string[]): string | null => {
+    for (const k of keys) {
+      const v = d[k];
+      if (typeof v === 'string' && v.length > 0) return v;
+    }
+    return null;
+  };
+  const num = (...keys: string[]): number | null => {
+    for (const k of keys) {
+      const v = d[k];
+      if (typeof v === 'number') return v;
+    }
+    return null;
+  };
+  const modelType = str('modelType', 'ModelType') ?? '';
   return {
-    driverId: driverInfo.driverId,
-    plateNumber: driverInfo.plateNumber,
-    modelType: driverInfo.modelType,
-    // Legacy fields not in new format - set to defaults
-    firstName: null,
-    lastName: null,
-    rating: 0,
-    carBrand: null,
-    carModel: driverInfo.modelType, // Map modelType to carModel for compatibility
-    pictureUrl: null,
-    phone: null,
+    driverId: str('driverId', 'DriverId') ?? '',
+    plateNumber:
+      str(
+        'plateNumber',
+        'PlateNumber',
+        'licensePlateNumber',
+        'LicensePlateNumber',
+      ) ?? '',
+    modelType,
+    firstName: str('firstName', 'FirstName'),
+    lastName: str('lastName', 'LastName'),
+    rating: num('rating', 'Rating') ?? 0,
+    carBrand: str('carBrand', 'CarBrand'),
+    carModel: str('carModel', 'CarModel') ?? modelType ?? null,
+    pictureUrl: str(
+      'pictureUrl',
+      'PictureUrl',
+      'pictureAddress',
+      'PictureAddress',
+    ),
+    phone: str('phone', 'Phone', 'phoneNumber', 'PhoneNumber'),
   };
 }
 

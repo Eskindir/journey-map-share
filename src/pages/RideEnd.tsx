@@ -33,6 +33,12 @@ const RideEnd = () => {
     ? parseGPSCoordinates(destination)
     : null;
 
+  // Parse last known driver position (may be absent on legacy links)
+  const lastPositionParam = searchParams.get("lastPosition") || "";
+  const lastPosition = lastPositionParam
+    ? parseGPSCoordinates(lastPositionParam)
+    : null;
+
   // Check if driver info is available
   const hasDriverInfo = Boolean(driverName);
 
@@ -124,35 +130,39 @@ const RideEnd = () => {
         <h1 className="text-xl font-semibold text-center">Ride Completed</h1>
       </header>
 
-      {/* Map showing destination */}
-      {destinationPosition && (
-        <div className="w-full h-48 md:h-64">
+      {/* Map showing last known driver position and destination */}
+      {(lastPosition || destinationPosition) && (
+        <div className="w-full h-[45vh] md:h-[55vh] min-h-[280px] border-y border-border shadow-inner overflow-hidden">
           <MapView
-            initialPosition={destinationPosition}
-            destinationPosition={destinationPosition}
+            initialPosition={lastPosition || destinationPosition || undefined}
+            destinationPosition={destinationPosition || undefined}
             showGoogleMap={true}
           />
         </div>
       )}
 
       {/* Main Content */}
-      <div className="flex-1 p-6 flex flex-col items-center justify-center gap-6">
+      <div className="flex-1 px-4 md:px-6 pt-6 pb-8 flex flex-col items-center gap-6 -mt-8 relative z-10">
         {/* Completion Card */}
         <Card
-          className={`w-full max-w-md ${isSuccess ? "border-success/30 shadow-lg shadow-success/10" : "border-muted"}`}
+          className={`w-full max-w-md shadow-2xl backdrop-blur-sm ${
+            isSuccess
+              ? "border-success/40 shadow-success/20 bg-card/95"
+              : "border-muted bg-card/95"
+          }`}
         >
           <CardContent className="p-8 text-center space-y-6">
             {/* Success/Status Icon */}
             <div className="flex justify-center">
               <div
-                className={`w-24 h-24 rounded-full flex items-center justify-center ${
+                className={`w-24 h-24 rounded-full flex items-center justify-center ring-4 ${
                   isSuccess
-                    ? "bg-gradient-to-br from-success/20 to-success/5"
-                    : "bg-muted"
+                    ? "bg-gradient-to-br from-success/25 to-success/5 ring-success/20 animate-in zoom-in-50 duration-500"
+                    : "bg-muted ring-muted-foreground/20"
                 }`}
               >
                 {isSuccess ? (
-                  <CheckCircle2 className="h-14 w-14 text-success" />
+                  <CheckCircle2 className="h-14 w-14 text-success" strokeWidth={2.5} />
                 ) : (
                   <XCircle className="h-14 w-14 text-muted-foreground" />
                 )}
@@ -160,7 +170,18 @@ const RideEnd = () => {
             </div>
 
             {/* Completion Message */}
-            <div className="space-y-2">
+            <div className="space-y-3">
+              <div className="flex justify-center">
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide ${
+                    isSuccess
+                      ? "bg-success/10 text-success border border-success/30"
+                      : "bg-muted text-muted-foreground border border-border"
+                  }`}
+                >
+                  {isSuccess ? "Completed" : "Cancelled"}
+                </span>
+              </div>
               <h2 className="text-2xl font-bold">{completionTitle}</h2>
               <p className="text-muted-foreground">{completionSubtitle}</p>
               <p className="text-sm text-muted-foreground">

@@ -3,8 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { MapPin, Navigation, User, X, Bell } from "lucide-react";
+import { MapPin, Navigation, Bell, Share2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
 import { debugLog } from "@/lib/config";
@@ -29,10 +28,7 @@ const RideStart = () => {
   const [currentLocationAddress, setCurrentLocationAddress] = useState("");
   const [destinationAddress, setDestinationAddress] = useState("");
   const [eta, setEta] = useState(20);
-  const [contacts, setContacts] = useState<string[]>([]);
-  const [contactInput, setContactInput] = useState("");
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
-  const [supportsContactPicker, setSupportsContactPicker] = useState(false);
   const [driverId, setDriverId] = useState("");
   const [deviceCode, setDeviceCode] = useState("");
   const [rideId, setRideId] = useState("");
@@ -45,13 +41,6 @@ const RideStart = () => {
   const [isFromTracking, setIsFromTracking] = useState(false);
   const [preTrackingId, setPreTrackingId] = useState("");
   const [locationProgress, setLocationProgress] = useState(0);
-
-  // Check if Contact Picker API is supported
-  useEffect(() => {
-    const hasContactPicker =
-      "contacts" in navigator && "ContactsManager" in window;
-    setSupportsContactPicker(hasContactPicker);
-  }, []);
 
   // Use validation service for GPS parsing
   const parseGPSCoordinates = validationParseGPS;
@@ -134,15 +123,6 @@ const RideStart = () => {
     const riderPhoneParam = searchParams.get("riderPhone");
     if (riderPhoneParam) {
       setRiderPhone(riderPhoneParam);
-    }
-
-    // Check for contacts in query string (comma-separated)
-    const contactsParam = searchParams.get("contacts");
-    if (contactsParam) {
-      const contactList = contactsParam.split(",").map(c => c.trim()).filter(Boolean);
-      if (contactList.length > 0) {
-        setContacts(contactList);
-      }
     }
 
     // Check for ETA in query string
@@ -245,69 +225,11 @@ const RideStart = () => {
     return () => clearInterval(interval);
   }, [isLoadingLocation]);
 
-  const addContact = () => {
-    if (contactInput.trim() && !contacts.includes(contactInput.trim())) {
-      setContacts([...contacts, contactInput.trim()]);
-      setContactInput("");
-    }
-  };
-
-  const pickContact = async () => {
-    try {
-      const props = ["name", "tel"];
-      const opts = { multiple: true };
-
-      // @ts-ignore - ContactsManager is not in TypeScript types yet
-      const selectedContacts = await navigator.contacts.select(props, opts);
-
-      selectedContacts.forEach((contact: any) => {
-        if (contact.tel && contact.tel.length > 0) {
-          const phoneNumber = contact.tel[0];
-          const displayName =
-            contact.name && contact.name.length > 0
-              ? `${contact.name[0]} (${phoneNumber})`
-              : phoneNumber;
-
-          if (!contacts.includes(displayName)) {
-            setContacts((prev) => [...prev, displayName]);
-          }
-        }
-      });
-
-      if (selectedContacts.length > 0) {
-        toast({
-          title: "Contacts Added",
-          description: `${selectedContacts.length} contact(s) added successfully.`,
-        });
-      }
-    } catch (error) {
-      if (error instanceof Error && error.name !== "AbortError") {
-        toast({
-          title: "Error",
-          description: "Unable to access contacts. Please try again.",
-          variant: "destructive",
-        });
-      }
-    }
-  };
-
-  const removeContact = (contact: string) => {
-    setContacts(contacts.filter((c) => c !== contact));
-  };
-
   const shareRide = async () => {
     if (!currentLocation || !destination) {
       showError(
         ErrorCode.VALIDATION_ERROR,
         "Please enter your location and destination.",
-      );
-      return;
-    }
-
-    if (contacts.length === 0) {
-      showError(
-        ErrorCode.VALIDATION_ERROR,
-        "Please add at least one contact to share with.",
       );
       return;
     }
@@ -332,12 +254,6 @@ const RideStart = () => {
         trackingIdToUse = preTrackingId;
         debugLog("Using pre-initiated tracking:", preTrackingId);
 
-        // Persist contacts for SOS feature
-        sessionStorage.setItem(
-          `sos-contacts-${preTrackingId}`,
-          JSON.stringify(contacts),
-        );
-
         // Use URL-provided driverData
         if (driverData) {
           try {
@@ -359,7 +275,7 @@ const RideStart = () => {
         const result = await initiateTracking({
           deviceCode: finalDeviceCode,
           rideId: newRideId,
-          trackingRecipients: contacts.join(","),
+          trackingRecipients: "",
           initialPosition,
           destinationPosition,
           isRideActive: true,
@@ -379,11 +295,6 @@ const RideStart = () => {
         }
 
         trackingIdToUse = result.trackingId;
-
-        sessionStorage.setItem(
-          `sos-contacts-${result.trackingId}`,
-          JSON.stringify(contacts),
-        );
 
         toast({
           title: "Tracking Started",
@@ -410,24 +321,39 @@ const RideStart = () => {
         sendingTrackingInfo: true,
       });
 
-      const message = `I'm taking a ride! Track me here: ${window.location.origin}/t/${trackingIdToUse}`;
-      const smsBody = encodeURIComponent(message);
-      const phoneNumbers = contacts.join(",");
+      // Public watcher link to share
+      const watcherUrl = `${window.location.origin}/t/${trackingIdToUse}`;
 
-      // Navigate rider to tracking view first
-      navigate(riderTrackUrl);
-
-      // Then open SMS app to send watcher link
-      const isMobile =
-        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-          navigator.userAgent,
-        );
-
-      if (isMobile) {
-        setTimeout(() => {
-          window.location.href = `sms:${phoneNumbers}?body=${smsBody}`;
-        }, 500);
+      // Open the device's native share UI, falling back to clipboard
+      if (typeof navigator.share === "function") {
+        try {
+          await navigator.share({
+            title: "Track my ride",
+            text: "I'm taking a ride! Track me here:",
+            url: watcherUrl,
+          });
+        } catch (err) {
+          // User cancelled or share failed — non-fatal, continue to tracking view
+          debugLog("Web Share dismissed or failed:", err);
+        }
+      } else {
+        try {
+          await navigator.clipboard.writeText(watcherUrl);
+          toast({
+            title: "Link copied",
+            description: "Tracking link copied to clipboard.",
+          });
+        } catch (err) {
+          debugLog("Clipboard fallback failed:", err);
+          toast({
+            title: "Share unavailable",
+            description: watcherUrl,
+          });
+        }
       }
+
+      // Navigate rider to tracking view
+      navigate(riderTrackUrl);
     } catch (error) {
       handleApiError(error);
     } finally {
@@ -562,62 +488,6 @@ const RideStart = () => {
           </div>
         )}
 
-        {/* Select Contacts */}
-        <div className="space-y-3">
-          <Label className="text-base font-medium">Select Contacts</Label>
-
-          {/* Show contact picker button only if supported */}
-          {supportsContactPicker ? (
-            <Button
-              onClick={pickContact}
-              variant="outline"
-              className="w-full"
-              type="button"
-            >
-              <User className="h-4 w-4 mr-2" />
-              Pick from Phone Contacts
-            </Button>
-          ) : (
-            /* Show manual entry only if contact picker not supported */
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Enter phone number"
-                  value={contactInput}
-                  onChange={(e) => setContactInput(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && addContact()}
-                  className="pl-9"
-                />
-              </div>
-              <Button onClick={addContact} variant="outline">
-                Add
-              </Button>
-            </div>
-          )}
-
-          {/* Contact List */}
-          {contacts.length > 0 && (
-            <div className="flex flex-wrap gap-2 p-3 bg-muted rounded-lg">
-              {contacts.map((contact, index) => (
-                <Badge
-                  key={index}
-                  variant="secondary"
-                  className="pl-3 pr-1 py-1"
-                >
-                  {contact}
-                  <button
-                    onClick={() => removeContact(contact)}
-                    className="ml-2 hover:bg-background/50 rounded-full p-0.5"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </Badge>
-              ))}
-            </div>
-          )}
-        </div>
-
         {/* Share Button */}
         <Button
           onClick={shareRide}
@@ -625,14 +495,15 @@ const RideStart = () => {
           size="lg"
           disabled={isSubmitting}
         >
-          {isSubmitting ? "Starting Tracking..." : "Share Ride Link via SMS"}
+          <Share2 className="h-5 w-5 mr-2" />
+          {isSubmitting ? "Starting Tracking..." : "Share Ride"}
         </Button>
 
         {/* Disclaimer */}
         <p className="text-xs text-muted-foreground text-center px-4">
           {isSubmitting
             ? "Please wait while we initiate your ride tracking..."
-            : "Your phone will open the SMS app to complete the share."}
+            : "Your device's share menu will open so you can pick where to send the tracking link."}
         </p>
 
         {/* Test Notifications Link */}

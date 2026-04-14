@@ -93,6 +93,11 @@ export async function initiateTracking(
     (responseRecord.DriverInfo as InitiateTrackingResponse['driverInfo'] | undefined) ??
     validatedResponse.driverInfo;
 
+  console.log(
+    'initiateTracking raw driverInfo from backend:',
+    JSON.stringify(driverInfoFromResponse),
+  );
+
   if (!trackingIdFromResponse.trim()) {
     throw new Error('Initiate tracking response did not include a valid id');
   }
@@ -202,19 +207,22 @@ export interface SendLocationResult {
  * @param trackingId - The tracking session ID
  * @param driverId - Driver identifier
  * @param position - Current GPS position
+ * @param rideStatus - Optional ride status to set on the backend (e.g. "SOS")
  * @returns Location update result with geolocation ID and timestamp
  */
 export async function sendLocationUpdate(
   trackingId: string,
   driverId: string,
   position: Position,
+  rideStatus?: RideStatus,
 ): Promise<SendLocationResult> {
-  debugLog('Sending location update:', { trackingId, driverId, position });
+  debugLog('Sending location update:', { trackingId, driverId, position, rideStatus });
 
   const request: AddGeolocationRequest = {
     driverId,
     trackingId,
     position,
+    ...(rideStatus ? { rideStatus } : {}),
   };
 
   const response = await apiPost<unknown>(`/addgeolocationtoride/${trackingId}`, request);
