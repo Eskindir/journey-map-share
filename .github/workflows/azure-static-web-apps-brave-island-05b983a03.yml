@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feature/road-pin-car
   pull_request:
     types: [opened, synchronize, reopened, closed]
     branches:
@@ -34,6 +35,9 @@ jobs:
           app_location: "/" # App source code path
           api_location: "" # Api source code path - optional
           output_location: "build" # Built app content directory - optional
+          # Push from main → production (empty = default). Any other listed
+          # branch → a named preview environment so the prod URL is untouched.
+          deployment_environment: ${{ github.ref != 'refs/heads/main' && 'feature-road-pin-car' || '' }}
           ###### End of Repository/Build Configurations ######
 
   close_pull_request_job:

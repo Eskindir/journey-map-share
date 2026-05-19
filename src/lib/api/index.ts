@@ -33,6 +33,10 @@ export {
   batchReverseGeocode,
 } from './geocoding';
 
+// Roads / map-matching API
+export { snapToRoads } from './roadsSnap';
+export type { SnappedPoint } from './roadsSnap';
+
 
 // SOS Emergency API
 export {

@@ -31,3 +31,28 @@ const svg = `
 `.trim();
 
 export const TAXI_MARKER_ICON = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+
+// Rotatable top-down vehicle silhouette for use with google.maps.Marker.icon
+// as a Symbol. The path is centered at (0,0) and drawn with the nose pointing
+// north (rotation 0°), so passing a bearing in degrees to `rotation` aligns
+// the car with its direction of travel.
+//
+// The path is intentionally a single closed shape because google.maps.Symbol
+// only supports one path. A factory is exported (not a const Symbol) because
+// the `anchor` field needs `new google.maps.Point(...)`, which requires the
+// Maps JS API to be loaded first.
+const TAXI_SYMBOL_PATH =
+  'M 0 -14 L 8 -6 L 8 12 L -8 12 L -8 -6 Z';
+
+export function buildTaxiMarkerSymbol(rotation: number): google.maps.Symbol {
+  return {
+    path: TAXI_SYMBOL_PATH,
+    fillColor: '#F5B400',
+    fillOpacity: 1,
+    strokeColor: '#1A1A1A',
+    strokeWeight: 1.5,
+    scale: 1.2,
+    rotation,
+    anchor: new google.maps.Point(0, 0),
+  };
+}

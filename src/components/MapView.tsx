@@ -7,13 +7,15 @@ import {
   Polyline,
 } from "@react-google-maps/api";
 import { config } from "@/lib/config";
-import { TAXI_MARKER_ICON } from "@/assets/taxi-marker";
+import { buildTaxiMarkerSymbol } from "@/assets/taxi-marker";
 
 interface MapViewProps {
   initialPosition?: { latitude: number; longitude: number };
   destinationPosition?: { latitude: number; longitude: number };
   locationHistory?: Array<{ latitude: number; longitude: number }>;
   showGoogleMap?: boolean;
+  /** Bearing in degrees, 0 = north, used to rotate the car icon. */
+  heading?: number;
 }
 
 const MapView = ({
@@ -21,6 +23,7 @@ const MapView = ({
   destinationPosition,
   locationHistory = [],
   showGoogleMap = false,
+  heading = 0,
 }: MapViewProps) => {
   const [progress, setProgress] = useState(0);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -69,24 +72,21 @@ const MapView = ({
           }))
         : [];
 
-    // Polyline options for the history path (dotted line)
-    const polylineOptions = {
-      strokeColor: "#3b82f6", // Blue color
-      strokeOpacity: 0,
-      strokeWeight: 2,
-      icons: [
-        {
-          icon: {
-            path: "M 0,-1 0,1",
-            strokeOpacity: 0.7,
-            strokeWeight: 2,
-            scale: 3,
-          },
-          offset: "0",
-          repeat: "12px",
-        },
-      ],
+    // Uber-style two-layer polyline: a darker, wider casing under a brighter
+    // fill on top. Rendered as two <Polyline> components sharing the same path.
+    const polylineCasingOptions = {
+      strokeColor: "#1A1A1A",
+      strokeOpacity: 0.35,
+      strokeWeight: 8,
       geodesic: true,
+      zIndex: 1,
+    };
+    const polylineFillOptions = {
+      strokeColor: "#1A73E8",
+      strokeOpacity: 0.95,
+      strokeWeight: 5,
+      geodesic: true,
+      zIndex: 2,
     };
 
     return (
@@ -116,28 +116,29 @@ const MapView = ({
               }
             }}
           >
-            {/* Route History Polyline (dotted) */}
+            {/* Route trail — casing under fill so the line gets a subtle dark
+                outline like Uber's. Both share the same snapped-to-road path. */}
             {routePath.length > 1 && (
-              <Polyline path={routePath} options={polylineOptions} />
+              <>
+                <Polyline path={routePath} options={polylineCasingOptions} />
+                <Polyline path={routePath} options={polylineFillOptions} />
+              </>
             )}
 
             {/* Markers — only render after the Google Maps API is loaded
                 so that google.maps.Size/Point constructors are available */}
             {mapLoaded && (
               <>
-                {/* Current/last-known driver position marker (taxi) */}
+                {/* Current/last-known driver position marker (taxi) — rotates
+                    to face heading via google.maps.Symbol. */}
                 <Marker
                   position={{
                     lat: initialPosition.latitude,
                     lng: initialPosition.longitude,
                   }}
-                  icon={{
-                    url: TAXI_MARKER_ICON,
-                    scaledSize: new google.maps.Size(40, 48),
-                    anchor: new google.maps.Point(20, 46),
-                  }}
+                  icon={buildTaxiMarkerSymbol(heading)}
                   title="Driver Location"
-                  zIndex={2}
+                  zIndex={3}
                 />
 
                 {/* Destination marker */}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -35,12 +35,14 @@ import {
   closeTracking,
   getTrackingInfo,
   reverseGeocode as apiReverseGeocode,
+  snapToRoads,
   type Position,
   type CloseTrackingRequest,
   type NormalizedDriverInfo,
 } from "@/lib/api";
 import { parseGPSCoordinates } from "@/lib/validation";
 import { handleApiError, handleGeolocationError } from "@/lib/errors";
+import { bearingBetween } from "@/lib/geo/bearing";
 
 const TrackRide = () => {
   const navigate = useNavigate();
@@ -60,6 +62,15 @@ const TrackRide = () => {
   >([]);
   const [currentLocationAddress, setCurrentLocationAddress] = useState("");
   const [destinationAddress, setDestinationAddress] = useState("");
+  const [heading, setHeading] = useState(0);
+  // Rolling window of the last raw GPS fixes (driver) — never displayed, only
+  // sent to Roads API to get a snapped+interpolated path.
+  const rawFixBufferRef = useRef<Position[]>([]);
+  // Rolling window of polled snapped positions (watcher) — re-snapped with
+  // interpolation so the trail between sparse polls follows road curves.
+  const watcherSnapBufferRef = useRef<Position[]>([]);
+  // Previous snapped position used to derive bearing for the marker rotation.
+  const lastSnappedPositionRef = useRef<Position | null>(null);
   const { toast } = useToast();
 
   const from = searchParams.get("from") || "Current Location";
@@ -271,25 +282,61 @@ const TrackRide = () => {
             return;
           }
 
-          const newPosition = latestLocation.position;
+          const polledPosition = latestLocation.position;
 
-          // Update current position
-          setCurrentPosition(newPosition);
-
-          // Add to location history if it's a new position
-          setLocationHistory((prev) => {
-            const lastPos = prev[prev.length - 1];
-            if (
-              !lastPos ||
-              lastPos.latitude !== newPosition.latitude ||
-              lastPos.longitude !== newPosition.longitude
-            ) {
-              return [...prev, newPosition];
+          // The driver already snaps before POST, so polled points are on the
+          // road. But polls are sparse (5s) — a straight chord between two
+          // snapped points still cuts across curves. Re-snapping a small
+          // rolling buffer with interpolate=true fills in the curve points
+          // and lets us derive bearing for the marker rotation.
+          const lastBufPos =
+            watcherSnapBufferRef.current[
+              watcherSnapBufferRef.current.length - 1
+            ];
+          if (
+            !lastBufPos ||
+            lastBufPos.latitude !== polledPosition.latitude ||
+            lastBufPos.longitude !== polledPosition.longitude
+          ) {
+            watcherSnapBufferRef.current.push(polledPosition);
+            if (watcherSnapBufferRef.current.length > 5) {
+              watcherSnapBufferRef.current.shift();
             }
-            return prev;
-          });
+          }
 
-          debugLog("Position updated:", newPosition);
+          const snapped = await snapToRoads(
+            watcherSnapBufferRef.current,
+            true,
+          );
+          const canonicalSnapped = [...snapped]
+            .reverse()
+            .find((p) => p.originalIndex !== undefined);
+          const canonicalPosition: Position = canonicalSnapped
+            ? {
+                latitude: canonicalSnapped.latitude,
+                longitude: canonicalSnapped.longitude,
+              }
+            : polledPosition;
+
+          const prevSnapped = lastSnappedPositionRef.current;
+          if (prevSnapped) {
+            const dLat = canonicalPosition.latitude - prevSnapped.latitude;
+            const dLng = canonicalPosition.longitude - prevSnapped.longitude;
+            if (Math.hypot(dLat, dLng) > 1e-5) {
+              setHeading(bearingBetween(prevSnapped, canonicalPosition));
+            }
+          }
+          lastSnappedPositionRef.current = canonicalPosition;
+
+          setCurrentPosition(canonicalPosition);
+          setLocationHistory(
+            snapped.map((p) => ({
+              latitude: p.latitude,
+              longitude: p.longitude,
+            })),
+          );
+
+          debugLog("Position updated:", canonicalPosition);
         }
       } catch (error) {
         // Log but don't show error to user for polling failures
@@ -329,35 +376,61 @@ const TrackRide = () => {
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           async (position) => {
-            const newPosition: Position = {
+            const rawPosition: Position = {
               latitude: position.coords.latitude,
               longitude: position.coords.longitude,
             };
 
+            // Push raw fix into rolling buffer (kept off-screen) and snap the
+            // recent window to actual road geometry. The canonical "current"
+            // position is the snap of the newest raw fix; the interpolated
+            // points in between become the trail tail.
+            rawFixBufferRef.current.push(rawPosition);
+            if (rawFixBufferRef.current.length > 10) {
+              rawFixBufferRef.current.shift();
+            }
+
+            const snapped = await snapToRoads(rawFixBufferRef.current, true);
+            const canonicalSnapped = [...snapped]
+              .reverse()
+              .find((p) => p.originalIndex !== undefined);
+            const canonicalPosition: Position = canonicalSnapped
+              ? {
+                  latitude: canonicalSnapped.latitude,
+                  longitude: canonicalSnapped.longitude,
+                }
+              : rawPosition;
+
+            const prevSnapped = lastSnappedPositionRef.current;
+            if (prevSnapped) {
+              const dLat = canonicalPosition.latitude - prevSnapped.latitude;
+              const dLng = canonicalPosition.longitude - prevSnapped.longitude;
+              if (Math.hypot(dLat, dLng) > 1e-5) {
+                setHeading(
+                  bearingBetween(prevSnapped, canonicalPosition),
+                );
+              }
+            }
+            lastSnappedPositionRef.current = canonicalPosition;
+
             debugLog("Sending location update:", {
               trackingId,
               driverId,
-              newPosition,
+              canonicalPosition,
             });
 
-            // Update current position on the map
-            setCurrentPosition(newPosition);
-
-            // Add to location history if it's a new position
-            setLocationHistory((prev) => {
-              const lastPos = prev[prev.length - 1];
-              if (
-                !lastPos ||
-                lastPos.latitude !== newPosition.latitude ||
-                lastPos.longitude !== newPosition.longitude
-              ) {
-                return [...prev, newPosition];
-              }
-              return prev;
-            });
+            // Marker uses the canonical on-road point; trail uses the full
+            // interpolated batch so the line follows road curves.
+            setCurrentPosition(canonicalPosition);
+            setLocationHistory(
+              snapped.map((p) => ({
+                latitude: p.latitude,
+                longitude: p.longitude,
+              })),
+            );
 
             try {
-              const updateResult = await sendLocationUpdate(trackingId, driverId, newPosition);
+              const updateResult = await sendLocationUpdate(trackingId, driverId, canonicalPosition);
               console.log("Location update result:", updateResult);
               console.log("isTrackingFinished value:", updateResult.isTrackingFinished, "type:", typeof updateResult.isTrackingFinished);
 
@@ -375,10 +448,10 @@ const TrackRide = () => {
                 if (to) {
                   endParams.set("destination", to);
                 }
-                // newPosition is the freshest geolocation reading
+                // canonicalPosition is the freshest snapped (or raw fallback) point
                 endParams.set(
                   "lastPosition",
-                  `${newPosition.latitude},${newPosition.longitude}`,
+                  `${canonicalPosition.latitude},${canonicalPosition.longitude}`,
                 );
                 navigate(`/ride-end?${endParams.toString()}`);
                 return;
@@ -678,6 +751,7 @@ const TrackRide = () => {
           destinationPosition={destinationPosition || undefined}
           locationHistory={locationHistory}
           showGoogleMap={!!(currentPosition || initialPosition)}
+          heading={heading}
         />
       </div>
 
