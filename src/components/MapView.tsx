@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { MapPin, Navigation } from "lucide-react";
 import {
   GoogleMap,
@@ -9,11 +9,35 @@ import {
 import { config } from "@/lib/config";
 import { TAXI_MARKER_ICON } from "@/assets/taxi-marker";
 
+const GOOGLE_MAP_LIBRARIES: ("geometry")[] = ["geometry"];
+
 interface MapViewProps {
   initialPosition?: { latitude: number; longitude: number };
   destinationPosition?: { latitude: number; longitude: number };
   locationHistory?: Array<{ latitude: number; longitude: number }>;
   showGoogleMap?: boolean;
+  /** Driver marker on the Google map (default: car/taxi icon). */
+  driverMarker?: "car" | "default";
+}
+
+function computeHeading(
+  history: Array<{ latitude: number; longitude: number }>,
+): number | undefined {
+  if (
+    history.length < 2 ||
+    typeof google === "undefined" ||
+    !google.maps?.geometry?.spherical
+  ) {
+    return undefined;
+  }
+
+  const prev = history[history.length - 2];
+  const curr = history[history.length - 1];
+
+  return google.maps.geometry.spherical.computeHeading(
+    new google.maps.LatLng(prev.latitude, prev.longitude),
+    new google.maps.LatLng(curr.latitude, curr.longitude),
+  );
 }
 
 const MapView = ({
@@ -21,13 +45,18 @@ const MapView = ({
   destinationPosition,
   locationHistory = [],
   showGoogleMap = false,
+  driverMarker = "car",
 }: MapViewProps) => {
   const [progress, setProgress] = useState(0);
   const [mapLoaded, setMapLoaded] = useState(false);
   const mapRef = useRef<google.maps.Map | null>(null);
+  const hasFitBoundsRef = useRef(false);
 
-  // Simulate journey progress
   useEffect(() => {
+    if (showGoogleMap) {
+      return;
+    }
+
     const interval = setInterval(() => {
       setProgress((prev) => {
         if (prev >= 100) return 100;
@@ -36,17 +65,46 @@ const MapView = ({
     }, 2000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [showGoogleMap]);
 
-  // Google Maps configuration
+  const driverHeading = useMemo(
+    () => computeHeading(locationHistory),
+    [locationHistory, mapLoaded],
+  );
+
+  const driverPosition =
+    locationHistory.length > 0
+      ? locationHistory[locationHistory.length - 1]
+      : initialPosition;
+
+  useEffect(() => {
+    if (!showGoogleMap || !driverPosition || !mapRef.current || !mapLoaded) {
+      return;
+    }
+
+    const latLng = {
+      lat: driverPosition.latitude,
+      lng: driverPosition.longitude,
+    };
+
+    if (hasFitBoundsRef.current) {
+      mapRef.current.panTo(latLng);
+    }
+  }, [
+    driverPosition?.latitude,
+    driverPosition?.longitude,
+    showGoogleMap,
+    mapLoaded,
+  ]);
+
   const mapContainerStyle = {
     width: "100%",
     height: "100%",
   };
 
   const defaultCenter = {
-    lat: initialPosition?.latitude || 9.032,
-    lng: initialPosition?.longitude || 38.7469,
+    lat: driverPosition?.latitude || initialPosition?.latitude || 9.032,
+    lng: driverPosition?.longitude || initialPosition?.longitude || 38.7469,
   };
 
   const mapOptions = {
@@ -55,12 +113,10 @@ const MapView = ({
     mapTypeControl: false,
     streetViewControl: false,
     fullscreenControl: true,
-    mapId: "DEMO_MAP_ID", // Required for AdvancedMarkerElement
+    mapId: "DEMO_MAP_ID",
   };
 
-  // If Google Map should be shown and we have initial position
-  if (showGoogleMap && initialPosition) {
-    // Create path from location history
+  if (showGoogleMap && driverPosition) {
     const routePath =
       locationHistory.length > 1
         ? locationHistory.map((pos) => ({
@@ -69,9 +125,8 @@ const MapView = ({
           }))
         : [];
 
-    // Polyline options for the history path (dotted line)
     const polylineOptions = {
-      strokeColor: "#3b82f6", // Blue color
+      strokeColor: "#3b82f6",
       strokeOpacity: 0,
       strokeWeight: 2,
       icons: [
@@ -89,9 +144,22 @@ const MapView = ({
       geodesic: true,
     };
 
+    const driverIcon: google.maps.Icon | undefined =
+      mapLoaded && driverMarker === "car"
+        ? {
+            url: TAXI_MARKER_ICON,
+            scaledSize: new google.maps.Size(40, 48),
+            anchor: new google.maps.Point(20, 46),
+            ...(driverHeading !== undefined ? { rotation: driverHeading } : {}),
+          }
+        : undefined;
+
     return (
       <div className="relative w-full h-full">
-        <LoadScript googleMapsApiKey={config.googleMaps.apiKey}>
+        <LoadScript
+          googleMapsApiKey={config.googleMaps.apiKey}
+          libraries={GOOGLE_MAP_LIBRARIES}
+        >
           <GoogleMap
             mapContainerStyle={mapContainerStyle}
             center={defaultCenter}
@@ -101,46 +169,43 @@ const MapView = ({
               mapRef.current = map;
               setMapLoaded(true);
 
-              // Auto-fit bounds to show both markers
-              if (initialPosition && destinationPosition) {
+              if (driverPosition && destinationPosition) {
                 const bounds = new google.maps.LatLngBounds();
                 bounds.extend({
-                  lat: initialPosition.latitude,
-                  lng: initialPosition.longitude,
+                  lat: driverPosition.latitude,
+                  lng: driverPosition.longitude,
                 });
                 bounds.extend({
                   lat: destinationPosition.latitude,
                   lng: destinationPosition.longitude,
                 });
                 map.fitBounds(bounds);
+                hasFitBoundsRef.current = true;
+              } else if (driverPosition) {
+                map.setCenter({
+                  lat: driverPosition.latitude,
+                  lng: driverPosition.longitude,
+                });
+                hasFitBoundsRef.current = true;
               }
             }}
           >
-            {/* Route History Polyline (dotted) */}
             {routePath.length > 1 && (
               <Polyline path={routePath} options={polylineOptions} />
             )}
 
-            {/* Markers — only render after the Google Maps API is loaded
-                so that google.maps.Size/Point constructors are available */}
             {mapLoaded && (
               <>
-                {/* Current/last-known driver position marker (taxi) */}
                 <Marker
                   position={{
-                    lat: initialPosition.latitude,
-                    lng: initialPosition.longitude,
+                    lat: driverPosition.latitude,
+                    lng: driverPosition.longitude,
                   }}
-                  icon={{
-                    url: TAXI_MARKER_ICON,
-                    scaledSize: new google.maps.Size(40, 48),
-                    anchor: new google.maps.Point(20, 46),
-                  }}
+                  {...(driverIcon ? { icon: driverIcon } : {})}
                   title="Driver Location"
                   zIndex={2}
                 />
 
-                {/* Destination marker */}
                 {destinationPosition && (
                   <Marker
                     position={{
@@ -163,7 +228,6 @@ const MapView = ({
     );
   }
 
-  // Calculate current position based on progress (for simulated map)
   const startX = 20;
   const startY = 70;
   const endX = 80;
@@ -174,7 +238,6 @@ const MapView = ({
 
   return (
     <div className="relative w-full h-full bg-gradient-to-br from-muted/30 via-muted/10 to-background overflow-hidden">
-      {/* Grid pattern */}
       <div className="absolute inset-0 opacity-20">
         <div
           className="absolute inset-0"
@@ -188,7 +251,6 @@ const MapView = ({
         />
       </div>
 
-      {/* Street lines */}
       <svg
         className="absolute inset-0 w-full h-full opacity-20"
         xmlns="http://www.w3.org/2000/svg"
@@ -235,7 +297,6 @@ const MapView = ({
         />
       </svg>
 
-      {/* Route path */}
       <svg
         className="absolute inset-0 w-full h-full"
         xmlns="http://www.w3.org/2000/svg"
@@ -256,7 +317,6 @@ const MapView = ({
           </linearGradient>
         </defs>
 
-        {/* Full route (faded) */}
         <line
           x1={`${startX}%`}
           y1={`${startY}%`}
@@ -268,7 +328,6 @@ const MapView = ({
           strokeDasharray="5,5"
         />
 
-        {/* Animated route (colored) */}
         <line
           x1={`${startX}%`}
           y1={`${startY}%`}
@@ -281,7 +340,6 @@ const MapView = ({
         />
       </svg>
 
-      {/* Start marker */}
       <div
         className="absolute z-10 transition-all duration-300"
         style={{
@@ -298,7 +356,6 @@ const MapView = ({
         </div>
       </div>
 
-      {/* Current position marker */}
       <div
         className="absolute z-10 transition-all duration-1000"
         style={{
@@ -308,22 +365,18 @@ const MapView = ({
         }}
       >
         <div className="relative">
-          {/* Pulsing circle animation */}
           <div className="absolute inset-0 -m-3">
             <div className="w-12 h-12 rounded-full bg-primary/20 animate-ping" />
           </div>
           <div className="absolute inset-0 -m-1">
             <div className="w-8 h-8 rounded-full bg-primary/30" />
           </div>
-
-          {/* Main marker */}
           <div className="relative bg-primary text-primary-foreground rounded-full p-2 shadow-float">
             <div className="w-4 h-4 rounded-full bg-current" />
           </div>
         </div>
       </div>
 
-      {/* Destination marker */}
       <div
         className="absolute z-10"
         style={{
@@ -338,7 +391,6 @@ const MapView = ({
         </div>
       </div>
 
-      {/* Progress indicator */}
       <div className="absolute bottom-4 left-4 bg-card/90 backdrop-blur-sm px-3 py-2 rounded-lg shadow-lg border border-border">
         <div className="text-xs text-muted-foreground">Journey Progress</div>
         <div className="text-sm font-semibold">{progress}%</div>

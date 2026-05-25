@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -35,12 +35,16 @@ import {
   closeTracking,
   getTrackingInfo,
   reverseGeocode as apiReverseGeocode,
+  snapPositionWithHistory,
   type Position,
   type CloseTrackingRequest,
   type NormalizedDriverInfo,
 } from "@/lib/api";
 import { parseGPSCoordinates } from "@/lib/validation";
-import { handleApiError, handleGeolocationError } from "@/lib/errors";
+import { handleApiError } from "@/lib/errors";
+import { useDriverLocation } from "@/hooks/useDriverLocation";
+import { appendPositionIfNew } from "@/lib/geo/locationHistory";
+import { positionsEqual } from "@/lib/geo/distance";
 
 const TrackRide = () => {
   const navigate = useNavigate();
@@ -55,9 +59,9 @@ const TrackRide = () => {
     latitude: number;
     longitude: number;
   } | null>(null);
-  const [locationHistory, setLocationHistory] = useState<
-    Array<{ latitude: number; longitude: number }>
-  >([]);
+  const [locationHistory, setLocationHistory] = useState<Position[]>([]);
+  const locationHistoryRef = useRef<Position[]>([]);
+  const lastServerPositionRef = useRef<Position | null>(null);
   const [currentLocationAddress, setCurrentLocationAddress] = useState("");
   const [destinationAddress, setDestinationAddress] = useState("");
   const { toast } = useToast();
@@ -129,6 +133,10 @@ const TrackRide = () => {
   // Parse GPS coordinates using validation service
   const initialPosition = parseGPSCoordinates(from);
   const destinationPosition = parseGPSCoordinates(to);
+
+  useEffect(() => {
+    locationHistoryRef.current = locationHistory;
+  }, [locationHistory]);
 
   // Geocode initial position on mount
   useEffect(() => {
@@ -271,25 +279,28 @@ const TrackRide = () => {
             return;
           }
 
-          const newPosition = latestLocation.position;
+          const rawPosition = latestLocation.position;
 
-          // Update current position
-          setCurrentPosition(newPosition);
+          if (
+            lastServerPositionRef.current &&
+            positionsEqual(lastServerPositionRef.current, rawPosition)
+          ) {
+            debugLog("Watcher poll: position unchanged, skipping snap");
+            return;
+          }
+          lastServerPositionRef.current = rawPosition;
 
-          // Add to location history if it's a new position
-          setLocationHistory((prev) => {
-            const lastPos = prev[prev.length - 1];
-            if (
-              !lastPos ||
-              lastPos.latitude !== newPosition.latitude ||
-              lastPos.longitude !== newPosition.longitude
-            ) {
-              return [...prev, newPosition];
-            }
-            return prev;
-          });
+          const snappedPosition = await snapPositionWithHistory(
+            locationHistoryRef.current.slice(-9),
+            rawPosition,
+          );
 
-          debugLog("Position updated:", newPosition);
+          setCurrentPosition(snappedPosition);
+          setLocationHistory((prev) =>
+            appendPositionIfNew(prev, snappedPosition),
+          );
+
+          debugLog("Position updated:", { raw: rawPosition, snapped: snappedPosition });
         }
       } catch (error) {
         // Log but don't show error to user for polling failures
@@ -314,95 +325,64 @@ const TrackRide = () => {
     carInfo,
   ]);
 
-  // Send tracking info at intervals if enabled
-  useEffect(() => {
-    if (!sendingTrackingInfo || !trackingId || !driverId) {
-      console.log("Tracking info sending disabled or missing params:", {
-        sendingTrackingInfo,
+  const handleDriverLocationFix = useCallback(
+    async ({ raw, snapped }: { raw: Position; snapped: Position }) => {
+      debugLog("Sending location update:", {
         trackingId,
         driverId,
+        raw,
+        snapped,
       });
-      return;
-    }
 
-    const sendLocationUpdateFn = async () => {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          async (position) => {
-            const newPosition: Position = {
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-            };
+      setCurrentPosition(snapped);
+      setLocationHistory((prev) => appendPositionIfNew(prev, snapped));
 
-            debugLog("Sending location update:", {
-              trackingId,
-              driverId,
-              newPosition,
-            });
-
-            // Update current position on the map
-            setCurrentPosition(newPosition);
-
-            // Add to location history if it's a new position
-            setLocationHistory((prev) => {
-              const lastPos = prev[prev.length - 1];
-              if (
-                !lastPos ||
-                lastPos.latitude !== newPosition.latitude ||
-                lastPos.longitude !== newPosition.longitude
-              ) {
-                return [...prev, newPosition];
-              }
-              return prev;
-            });
-
-            try {
-              const updateResult = await sendLocationUpdate(trackingId, driverId, newPosition);
-              console.log("Location update result:", updateResult);
-              console.log("isTrackingFinished value:", updateResult.isTrackingFinished, "type:", typeof updateResult.isTrackingFinished);
-
-              // Check if tracking was finished by another party
-              if (updateResult.isTrackingFinished === true) {
-                console.warn("Tracking finished detected! Redirecting to ride-end...");
-                const endParams = new URLSearchParams({
-                  trackingId,
-                  status: "ArrivedSafely",
-                  viewerType: "driver",
-                  driverName: driverName,
-                  plateNumber: carPlate,
-                  modelType: carInfo,
-                });
-                if (to) {
-                  endParams.set("destination", to);
-                }
-                // newPosition is the freshest geolocation reading
-                endParams.set(
-                  "lastPosition",
-                  `${newPosition.latitude},${newPosition.longitude}`,
-                );
-                navigate(`/ride-end?${endParams.toString()}`);
-                return;
-              }
-            } catch (error) {
-              // Log but continue - the retry logic will handle transient errors
-              debugLog("Error sending location update:", error);
-            }
-          },
-          (error) => {
-            handleGeolocationError(error);
-          },
+      try {
+        const updateResult = await sendLocationUpdate(
+          trackingId,
+          driverId,
+          snapped,
         );
+        console.log("Location update result:", updateResult);
+        console.log(
+          "isTrackingFinished value:",
+          updateResult.isTrackingFinished,
+          "type:",
+          typeof updateResult.isTrackingFinished,
+        );
+
+        if (updateResult.isTrackingFinished === true) {
+          console.warn(
+            "Tracking finished detected! Redirecting to ride-end...",
+          );
+          const endParams = new URLSearchParams({
+            trackingId,
+            status: "ArrivedSafely",
+            viewerType: "driver",
+            driverName: driverName,
+            plateNumber: carPlate,
+            modelType: carInfo,
+          });
+          if (to) {
+            endParams.set("destination", to);
+          }
+          endParams.set(
+            "lastPosition",
+            `${snapped.latitude},${snapped.longitude}`,
+          );
+          navigate(`/ride-end?${endParams.toString()}`);
+        }
+      } catch (error) {
+        debugLog("Error sending location update:", error);
       }
-    };
+    },
+    [trackingId, driverId, navigate, driverName, carPlate, carInfo, to],
+  );
 
-    // Send immediately on mount
-    sendLocationUpdateFn();
-
-    // Then send every 15 seconds
-    const interval = setInterval(sendLocationUpdateFn, 15000);
-
-    return () => clearInterval(interval);
-  }, [sendingTrackingInfo, trackingId, driverId, sosActivated]);
+  useDriverLocation({
+    enabled: sendingTrackingInfo && !!trackingId && !!driverId,
+    onFix: handleDriverLocationFix,
+  });
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);

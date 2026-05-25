@@ -33,6 +33,9 @@ export {
   batchReverseGeocode,
 } from './geocoding';
 
+// Roads API
+export { snapToRoads, snapPositionWithHistory } from './roads';
+
 
 // SOS Emergency API
 export {
