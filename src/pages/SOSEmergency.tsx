@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,8 +13,14 @@ import {
 import MapView from "@/components/MapView";
 import { useToast } from "@/hooks/use-toast";
 import { debugLog } from "@/lib/config";
-import { getSOSStatus } from "@/lib/api";
-import { reverseGeocode as apiReverseGeocode } from "@/lib/api";
+import {
+  getSOSStatus,
+  reverseGeocode as apiReverseGeocode,
+  snapPositionWithHistory,
+  type Position,
+} from "@/lib/api";
+import { appendPositionIfNew } from "@/lib/geo/locationHistory";
+import { positionsEqual } from "@/lib/geo/distance";
 
 const SOSEmergency = () => {
   const { sosId } = useParams();
@@ -26,16 +32,17 @@ const SOSEmergency = () => {
   const [driverPhone, setDriverPhone] = useState("");
   const [plateNumber, setPlateNumber] = useState("");
   const [vehicleModel, setVehicleModel] = useState("");
-  const [currentPosition, setCurrentPosition] = useState<{
-    latitude: number;
-    longitude: number;
-  } | null>(null);
-  const [locationHistory, setLocationHistory] = useState<
-    Array<{ latitude: number; longitude: number }>
-  >([]);
+  const [currentPosition, setCurrentPosition] = useState<Position | null>(null);
+  const [locationHistory, setLocationHistory] = useState<Position[]>([]);
+  const locationHistoryRef = useRef<Position[]>([]);
+  const lastServerPositionRef = useRef<Position | null>(null);
   const [currentAddress, setCurrentAddress] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [sosTime, setSosTime] = useState("");
+
+  useEffect(() => {
+    locationHistoryRef.current = locationHistory;
+  }, [locationHistory]);
 
   // Reverse geocode helper
   const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
@@ -81,20 +88,31 @@ const SOSEmergency = () => {
         }
 
         if (status.driverPosition) {
-          const newPos = status.driverPosition;
-          setCurrentPosition(newPos);
+          const rawPosition = status.driverPosition;
 
-          setLocationHistory((prev) => {
-            const lastPos = prev[prev.length - 1];
-            if (
-              !lastPos ||
-              lastPos.latitude !== newPos.latitude ||
-              lastPos.longitude !== newPos.longitude
-            ) {
-              return [...prev, newPos];
-            }
-            return prev;
-          });
+          if (
+            !lastServerPositionRef.current ||
+            !positionsEqual(lastServerPositionRef.current, rawPosition)
+          ) {
+            lastServerPositionRef.current = rawPosition;
+
+            const snappedPosition = await snapPositionWithHistory(
+              locationHistoryRef.current.slice(-9),
+              rawPosition,
+            );
+
+            setCurrentPosition(snappedPosition);
+            setLocationHistory((prev) =>
+              appendPositionIfNew(prev, snappedPosition),
+            );
+
+            debugLog("SOS position updated:", {
+              raw: rawPosition,
+              snapped: snappedPosition,
+            });
+          } else {
+            debugLog("SOS poll: position unchanged, skipping snap");
+          }
         }
 
         setLoading(false);
@@ -192,6 +210,7 @@ const SOSEmergency = () => {
           initialPosition={currentPosition || undefined}
           locationHistory={locationHistory}
           showGoogleMap={!!currentPosition}
+          driverMarker="car"
         />
       </div>
 

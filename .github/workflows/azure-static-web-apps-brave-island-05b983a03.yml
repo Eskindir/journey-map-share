@@ -4,10 +4,12 @@ on:
   push:
     branches:
       - main
+      - crsr-feature/car-on-map
   pull_request:
     types: [opened, synchronize, reopened, closed]
     branches:
       - main
+      - crsr-feature/car-on-map
 
 jobs:
   build_and_deploy_job:
