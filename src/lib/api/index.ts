@@ -26,6 +26,17 @@ export type {
   GetTrackingResult,
 } from './tracking';
 
+// Video API (rider video request + Telegram delivery)
+export {
+  requestRiderVideo,
+  issueTelegramLink,
+  buildTelegramDeepLink,
+} from './video';
+export type {
+  RiderVideoResult,
+  TelegramLinkResult,
+} from './video';
+
 // Geocoding API
 export {
   reverseGeocode,

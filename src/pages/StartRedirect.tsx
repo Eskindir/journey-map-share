@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, AlertCircle } from "lucide-react";
 import { getTrackingInfo } from "@/lib/api";
 import { debugLog } from "@/lib/config";
+import { captureRiderKeyFromQuery } from "@/lib/riderKey";
 
 const StartRedirect = () => {
   const { trackingId } = useParams();
@@ -16,6 +17,10 @@ const StartRedirect = () => {
       setError("Missing tracking ID");
       return;
     }
+
+    // Capture the rider's video-decryption key from the tracking link
+    // (?rk=...&cid=...) before anything else, keyed by confirmation id.
+    captureRiderKeyFromQuery(window.location.search);
 
     const fetchAndRedirect = async () => {
       try {

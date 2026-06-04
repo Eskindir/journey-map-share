@@ -25,6 +25,12 @@ export interface RequestConfig {
   retries?: number;
   retryDelay?: number;
   skipRetry?: boolean;
+  /**
+   * Override the base URL for this request. Defaults to `config.api.baseUrl`.
+   * Used to reach the separate Ride Processor (video) Functions host while
+   * reusing the same retry/timeout/error handling.
+   */
+  baseUrl?: string;
 }
 
 /**
@@ -75,9 +81,10 @@ export async function apiRequest<T>(
     retries = config.api.retryAttempts,
     retryDelay = config.api.retryDelay,
     skipRetry = false,
+    baseUrl = config.api.baseUrl,
   } = requestConfig;
 
-  const url = `${config.api.baseUrl}${endpoint}`;
+  const url = `${baseUrl}${endpoint}`;
   let lastError: ApiError | null = null;
   const maxAttempts = skipRetry ? 1 : retries + 1;
 

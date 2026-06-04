@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -5,6 +6,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { CheckCircle2, XCircle, User, Car } from "lucide-react";
 import MapView from "@/components/MapView";
 import { parseGPSCoordinates } from "@/lib/validation";
+import { isVideoFeatureEnabled } from "@/lib/config";
+import { getTrackingInfo } from "@/lib/api/tracking";
+import { getRiderKey } from "@/lib/riderKey";
+import SatisfactionPrompt from "@/components/ride/SatisfactionPrompt";
+import RideVideoCard from "@/components/ride/RideVideoCard";
 
 const RideEnd = () => {
   const navigate = useNavigate();
@@ -27,6 +33,65 @@ const RideEnd = () => {
   const viewerType = (searchParams.get("viewerType") || "watcher") as
     | "driver"
     | "watcher";
+
+  // The video pipeline keys on the ride confirmation id. In the RideManager flow
+  // the tracking session's rideId IS the confirmation id, so the existing rideId
+  // param carries it; otherwise resolve it from the tracking session.
+  const rideIdParam = searchParams.get("rideId") || "";
+  const [confirmationId, setConfirmationId] = useState<string | null>(
+    rideIdParam || null
+  );
+
+  // Rider's decryption key, captured from the tracking link at /start and stored
+  // against the confirmation id. Required to request the encrypted video.
+  const [riderKey, setRiderKey] = useState<string | null>(
+    rideIdParam ? getRiderKey(rideIdParam) : null
+  );
+
+  // Rider satisfaction: null = unanswered. Choosing "Not satisfied" reveals the
+  // video request flow.
+  const [satisfied, setSatisfied] = useState<boolean | null>(null);
+
+  // Show the video flow only for the rider (watcher) when it's configured.
+  const showVideoFlow = viewerType === "watcher" && isVideoFeatureEnabled();
+
+  // Resolve the confirmation id + rider key (and auto-reveal the card on return
+  // visits) once the rider is in the unsatisfied path or a request is persisted.
+  useEffect(() => {
+    if (!showVideoFlow || !trackingId) return;
+    let cancelled = false;
+
+    const resolve = async () => {
+      let resolvedId = confirmationId;
+      if (!resolvedId) {
+        try {
+          const info = await getTrackingInfo(trackingId);
+          if (!cancelled && info?.rideId) {
+            resolvedId = info.rideId;
+            setConfirmationId(info.rideId);
+          }
+        } catch {
+          // Non-fatal: the card stays disabled until the id resolves.
+        }
+      }
+      if (!cancelled && resolvedId) {
+        if (!riderKey) {
+          setRiderKey(getRiderKey(resolvedId));
+        }
+        // If a video request is already in progress/ready, reveal the card so the
+        // rider lands back in the right place.
+        const persisted = localStorage.getItem(`ride-video:${resolvedId}`);
+        if (persisted && satisfied === null) {
+          setSatisfied(false);
+        }
+      }
+    };
+
+    resolve();
+    return () => {
+      cancelled = true;
+    };
+  }, [showVideoFlow, trackingId, confirmationId, riderKey, satisfied]);
 
   // Parse destination coordinates for the map
   const destinationPosition = destination
@@ -223,6 +288,16 @@ const RideEnd = () => {
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {/* Rider satisfaction + video request (watcher view) */}
+        {showVideoFlow && (
+          <>
+            <SatisfactionPrompt selected={satisfied} onSelect={setSatisfied} />
+            {satisfied === false && (
+              <RideVideoCard confirmationId={confirmationId} riderKey={riderKey} />
+            )}
+          </>
         )}
 
         {/* Actions - Only shown for driver */}

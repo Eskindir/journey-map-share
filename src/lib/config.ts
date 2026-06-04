@@ -12,6 +12,28 @@ export interface ApiConfig {
   retryDelay: number;
 }
 
+/**
+ * Ride Processor (video) API configuration.
+ *
+ * The video pipeline lives on a separate Azure Functions host that is
+ * protected with a function key (passed as a `?code=` query parameter),
+ * so it needs its own base URL and key distinct from the tracking API.
+ */
+export interface VideoApiConfig {
+  baseUrl: string;
+  functionCode: string;
+}
+
+/**
+ * Telegram delivery configuration.
+ *
+ * The ready video is delivered to the user via a Telegram bot. The PWA only
+ * needs the bot username to build the `t.me/<bot>?start=<token>` deep link.
+ */
+export interface TelegramConfig {
+  botUsername: string;
+}
+
 export interface GoogleMapsConfig {
   apiKey: string;
 }
@@ -27,6 +49,8 @@ export interface FeatureFlags {
 
 export interface AppConfig {
   api: ApiConfig;
+  videoApi: VideoApiConfig;
+  telegram: TelegramConfig;
   googleMaps: GoogleMapsConfig;
   push: PushConfig;
   features: FeatureFlags;
@@ -86,6 +110,15 @@ export const config: AppConfig = {
     retryAttempts: getEnvNumber('VITE_API_RETRY_ATTEMPTS', 3),
     retryDelay: getEnvNumber('VITE_API_RETRY_DELAY', 1000),
   },
+  videoApi: {
+    // Ride Processor Functions host. Optional - falls back to empty so the
+    // app still boots; the video feature checks isVideoFeatureEnabled().
+    baseUrl: getEnvVar('VITE_VIDEO_API_BASE_URL', ''),
+    functionCode: getEnvVar('VITE_VIDEO_API_CODE', ''),
+  },
+  telegram: {
+    botUsername: getEnvVar('VITE_TELEGRAM_BOT_USERNAME', ''),
+  },
   googleMaps: {
     apiKey: getEnvVar('VITE_GOOGLE_MAPS_API_KEY'),
   },
@@ -106,6 +139,14 @@ export function debugLog(...args: unknown[]): void {
   if (config.features.enableDebugLogging) {
     console.log('[DEBUG]', ...args);
   }
+}
+
+/**
+ * Whether the ride-video / Telegram delivery feature is configured.
+ * The feature is hidden when its backend host or bot is not set up.
+ */
+export function isVideoFeatureEnabled(): boolean {
+  return Boolean(config.videoApi.baseUrl && config.telegram.botUsername);
 }
 
 /**
