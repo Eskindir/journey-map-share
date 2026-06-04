@@ -52,13 +52,16 @@ const RideEnd = () => {
   // video request flow.
   const [satisfied, setSatisfied] = useState<boolean | null>(null);
 
-  // Show the video flow only for the rider (watcher) when it's configured.
-  const showVideoFlow = viewerType === "watcher" && isVideoFeatureEnabled();
+  // The video feature is gated on the rider's decryption key, not viewerType:
+  // only the rider (sender) captures a riderKey at /start, so its presence is
+  // what makes the flow usable. `videoConfigured` is the synchronous config gate
+  // used to drive key resolution; the visible flow waits for the key itself.
+  const videoConfigured = isVideoFeatureEnabled();
 
   // Resolve the confirmation id + rider key (and auto-reveal the card on return
   // visits) once the rider is in the unsatisfied path or a request is persisted.
   useEffect(() => {
-    if (!showVideoFlow || !trackingId) return;
+    if (!videoConfigured || !trackingId) return;
     let cancelled = false;
 
     const resolve = async () => {
@@ -91,7 +94,10 @@ const RideEnd = () => {
     return () => {
       cancelled = true;
     };
-  }, [showVideoFlow, trackingId, confirmationId, riderKey, satisfied]);
+  }, [videoConfigured, trackingId, confirmationId, riderKey, satisfied]);
+
+  // Show the video flow once we have the rider's key (rider/sender only).
+  const showVideoFlow = videoConfigured && !!riderKey;
 
   // Parse destination coordinates for the map
   const destinationPosition = destination
