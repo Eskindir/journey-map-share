@@ -142,11 +142,11 @@ export function debugLog(...args: unknown[]): void {
 }
 
 /**
- * Whether the ride-video / Telegram delivery feature is configured.
- * The feature is hidden when its backend host or bot is not set up.
+ * Whether the ride-video feature is configured. The ready link is delivered to
+ * the rider by SMS, so only the video API host is required (no Telegram bot).
  */
 export function isVideoFeatureEnabled(): boolean {
-  return Boolean(config.videoApi.baseUrl && config.telegram.botUsername);
+  return Boolean(config.videoApi.baseUrl);
 }
 
 /**
