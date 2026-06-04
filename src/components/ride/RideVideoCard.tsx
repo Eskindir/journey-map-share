@@ -20,10 +20,10 @@ interface RideVideoCardProps {
 /**
  * Hosts the entire "request a ride video" state machine on the ride-end screen.
  *
- * Delivery is via Telegram: the rider taps to start the decrypt/merge and link
- * their Telegram chat; the bot sends the ready video link when merging finishes
- * (minutes later). The card also offers an in-app open as a fallback. State is
- * persisted by useVideoRequest, so closing and returning resumes correctly.
+ * Delivery is via SMS: the rider taps to start the decrypt/merge; when merging
+ * finishes (minutes later) the backend texts the ready video link to the rider's
+ * phone. The card also offers an in-app open as a fallback. State is persisted by
+ * useVideoRequest, so closing and returning resumes correctly.
  */
 const RideVideoCard = ({ confirmationId, riderKey }: RideVideoCardProps) => {
   const {
@@ -31,8 +31,7 @@ const RideVideoCard = ({ confirmationId, riderKey }: RideVideoCardProps) => {
     isBusy,
     isStalled,
     error,
-    requestAndOpenTelegram,
-    resendToTelegram,
+    requestVideo,
     openInApp,
     retry,
   } = useVideoRequest(confirmationId, riderKey);
@@ -59,13 +58,13 @@ const RideVideoCard = ({ confirmationId, riderKey }: RideVideoCardProps) => {
         {state === "idle" && (
           <>
             <p className="text-sm text-muted-foreground">
-              We can prepare a video of your ride and send it to your Telegram.
+              We can prepare a video of your ride and text the link to your phone.
               It takes a few minutes — you don&apos;t have to wait here.
             </p>
             <Button
               className="w-full gap-2"
               size="lg"
-              onClick={requestAndOpenTelegram}
+              onClick={requestVideo}
               disabled={disabled}
             >
               {isBusy ? (
@@ -73,7 +72,7 @@ const RideVideoCard = ({ confirmationId, riderKey }: RideVideoCardProps) => {
               ) : (
                 <Send className="h-4 w-4" />
               )}
-              Get my video on Telegram
+              Get my video
             </Button>
           </>
         )}
@@ -86,7 +85,7 @@ const RideVideoCard = ({ confirmationId, riderKey }: RideVideoCardProps) => {
               <div className="space-y-1">
                 <p className="text-sm font-medium">Preparing your video…</p>
                 <p className="text-xs text-muted-foreground">
-                  We&apos;ll send the link to your Telegram when it&apos;s ready.
+                  We&apos;ll text the link to your phone when it&apos;s ready.
                   You can close this page and come back anytime.
                 </p>
               </div>
@@ -97,28 +96,14 @@ const RideVideoCard = ({ confirmationId, riderKey }: RideVideoCardProps) => {
                 <Clock className="h-4 w-4 shrink-0 mt-0.5" />
                 <span>
                   This is taking longer than usual — it&apos;s still working.
-                  Hang tight, or re-open Telegram below.
+                  Hang tight, we&apos;ll text you when it&apos;s ready.
                 </span>
               </div>
             )}
-
-            <Button
-              variant="outline"
-              className="w-full gap-2"
-              onClick={resendToTelegram}
-              disabled={disabled}
-            >
-              {isBusy ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-              Open Telegram again
-            </Button>
           </>
         )}
 
-        {/* READY — delivered to Telegram, with in-app fallback */}
+        {/* READY — texted to the rider, with in-app fallback */}
         {state === "ready" && (
           <>
             <div className="flex items-start gap-3 rounded-lg bg-success/10 p-3">
@@ -126,7 +111,7 @@ const RideVideoCard = ({ confirmationId, riderKey }: RideVideoCardProps) => {
               <div className="space-y-1">
                 <p className="text-sm font-medium">Your video is ready</p>
                 <p className="text-xs text-muted-foreground">
-                  We&apos;ve sent the link to your Telegram. You can also open it
+                  We&apos;ve texted the link to your phone. You can also open it
                   here.
                 </p>
               </div>
@@ -144,15 +129,6 @@ const RideVideoCard = ({ confirmationId, riderKey }: RideVideoCardProps) => {
                 <Video className="h-4 w-4" />
               )}
               Open video here
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full gap-2"
-              onClick={resendToTelegram}
-              disabled={disabled}
-            >
-              <Send className="h-4 w-4" />
-              Resend to Telegram
             </Button>
           </>
         )}

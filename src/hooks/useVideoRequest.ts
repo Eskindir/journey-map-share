@@ -5,20 +5,16 @@
  *
  * The ride video is end-to-end encrypted. The rider's decryption key was captured
  * from the tracking link and is passed in here with the confirmation id. Tapping
- * "request" (1) opens a Telegram deep link so the bot can deliver the ready video
- * link to the rider's chat and (2) kicks off the backend decrypt+merge. Merging
- * takes minutes, so we do NOT trap the rider on a spinner: state is persisted to
- * localStorage keyed by confirmation id, polling is visibility-aware with an
- * escalating interval, and reopening the ride-end screen resumes. Telegram is the
- * primary delivery; the hook also exposes an in-app "open" fallback.
+ * "request" kicks off the backend decrypt+merge. Merging takes minutes, so we do
+ * NOT trap the rider on a spinner: state is persisted to localStorage keyed by
+ * confirmation id, polling is visibility-aware with an escalating interval, and
+ * reopening the ride-end screen resumes. When the merge completes the backend
+ * texts the ready video link to the rider's phone (SMS); the hook also exposes an
+ * in-app "open" fallback.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  requestRiderVideo,
-  issueTelegramLink,
-  buildTelegramDeepLink,
-} from '@/lib/api/video';
+import { requestRiderVideo } from '@/lib/api/video';
 import { debugLog } from '@/lib/config';
 
 export type VideoRequestState = 'idle' | 'generating' | 'ready' | 'failed';
@@ -31,11 +27,9 @@ export interface UseVideoRequestReturn {
   isStalled: boolean;
   /** Last error message, if any. */
   error: string | null;
-  /** Start merging + open Telegram so the bot can deliver the ready link. */
-  requestAndOpenTelegram: () => Promise<void>;
-  /** Re-open the Telegram deep link (e.g. closed before tapping Start). */
-  resendToTelegram: () => Promise<void>;
-  /** Open the merged video in-app (download/playback fallback to Telegram). */
+  /** Start merging; the ready link is texted to the rider's phone when done. */
+  requestVideo: () => Promise<void>;
+  /** Open the merged video in-app (download/playback fallback to the SMS link). */
   openInApp: () => Promise<void>;
   /** Retry after a failure. */
   retry: () => Promise<void>;
@@ -191,14 +185,7 @@ export function useVideoRequest(
     };
   }, [confirmationId, riderKey, state, persist, stopPolling, markReady]);
 
-  const openTelegram = useCallback(async () => {
-    if (!confirmationId) return;
-    const { linkToken, botUsername } = await issueTelegramLink(confirmationId);
-    const deepLink = buildTelegramDeepLink(linkToken, botUsername);
-    window.open(deepLink, '_blank', 'noopener');
-  }, [confirmationId]);
-
-  const requestAndOpenTelegram = useCallback(async () => {
+  const requestVideo = useCallback(async () => {
     if (!confirmationId || isBusy) return;
     if (!riderKey) {
       setState('failed');
@@ -208,9 +195,6 @@ export function useVideoRequest(
     setIsBusy(true);
     setError(null);
     try {
-      // Open Telegram so the bot can bind the chat and deliver the link.
-      await openTelegram();
-
       // Kick off the decrypt/merge (may already be ready).
       const now = Date.now();
       requestedAtRef.current = now;
@@ -231,21 +215,7 @@ export function useVideoRequest(
     } finally {
       setIsBusy(false);
     }
-  }, [confirmationId, riderKey, isBusy, openTelegram, markReady, persist]);
-
-  const resendToTelegram = useCallback(async () => {
-    if (!confirmationId || isBusy) return;
-    setIsBusy(true);
-    setError(null);
-    try {
-      await openTelegram();
-    } catch (err) {
-      debugLog('Failed to open Telegram:', err);
-      setError(err instanceof Error ? err.message : 'Could not open Telegram.');
-    } finally {
-      setIsBusy(false);
-    }
-  }, [confirmationId, isBusy, openTelegram]);
+  }, [confirmationId, riderKey, isBusy, markReady, persist]);
 
   const openInApp = useCallback(async () => {
     if (!confirmationId || isBusy) return;
@@ -274,16 +244,15 @@ export function useVideoRequest(
   }, [confirmationId, riderKey, isBusy, markReady]);
 
   const retry = useCallback(async () => {
-    await requestAndOpenTelegram();
-  }, [requestAndOpenTelegram]);
+    await requestVideo();
+  }, [requestVideo]);
 
   return {
     state,
     isBusy,
     isStalled,
     error,
-    requestAndOpenTelegram,
-    resendToTelegram,
+    requestVideo,
     openInApp,
     retry,
   };
