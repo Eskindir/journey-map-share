@@ -252,6 +252,10 @@ const TrackRide = () => {
               viewerType: "watcher",
             });
 
+            if (latestLocation.rideId) {
+              params.set("rideId", latestLocation.rideId);
+            }
+
             if (driverName) {
               params.set("driverName", driverName);
             }
@@ -589,6 +593,10 @@ const TrackRide = () => {
         plateNumber: carPlate,
         modelType: carInfo,
       });
+
+      if (result.rideId) {
+        params.set("rideId", result.rideId);
+      }
 
       if (to) {
         params.set("destination", to);
