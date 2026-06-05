@@ -43,6 +43,16 @@ function videoRequestOptions() {
 }
 
 /**
+ * The absolute URL that `requestRiderVideo` POSTs to (decrypt/rider-by-confirmation),
+ * including the `?code=` function key. Exposed so the UI can surface it for
+ * debugging/diagnostics. Note: the function key is already client-visible (it ships
+ * in the bundle and on every request), so this is not a new exposure.
+ */
+export function getRiderVideoRequestUrl(): string {
+  return `${config.videoApi.baseUrl}${buildVideoEndpoint('decrypt/rider-by-confirmation')}`;
+}
+
+/**
  * Request the rider's video. Kicks off decrypt+merge (or returns the SAS URL if
  * already merged). Safe to call repeatedly as a poll: returns 'ready' with the
  * URL once available, 'processing' while merging, or 'error' on a hard failure.
