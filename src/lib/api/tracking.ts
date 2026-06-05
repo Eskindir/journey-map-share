@@ -435,6 +435,41 @@ export async function getTrackingInfo(
   return result;
 }
 /**
+ * Trigger an SOS alert and notify the rider's emergency contacts by SMS.
+ *
+ * The friends/family phone numbers were stored client-side when the rider shared
+ * the ride (see lib/sosRecipients). On SOS we pass them to the backend `/sos`
+ * endpoint, which records the SOS and sends each contact an SOS SMS (the message
+ * is templated server-side). Never throws — raising the SOS must not be blocked by
+ * a notification failure.
+ */
+export async function triggerSosAlert(params: {
+  trackingId: string;
+  driverId?: string;
+  driverName?: string;
+  driverPlateNumber?: string;
+  position?: Position | null;
+  recipients: string[];
+}): Promise<boolean> {
+  const { trackingId, driverId, driverName, driverPlateNumber, position, recipients } =
+    params;
+  try {
+    await apiPost<unknown>('/sos', {
+      trackingId,
+      driverId: driverId ?? '',
+      driverName: driverName ?? '',
+      driverPlateNumber: driverPlateNumber ?? '',
+      driverPosition: position ?? undefined,
+      recipients,
+    });
+    return true;
+  } catch (error) {
+    debugLog('Failed to trigger SOS alert:', error);
+    return false;
+  }
+}
+
+/**
  * Build tracking URL with all necessary parameters
  *
  * @param params - Tracking parameters

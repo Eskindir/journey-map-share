@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { MapPin, Navigation, Bell, Share2 } from "lucide-react";
+import { MapPin, Navigation, Bell, Share2, Users, Plus, X } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
 import { debugLog } from "@/lib/config";
@@ -12,6 +12,10 @@ import {
   buildTrackingUrl,
   reverseGeocode as apiReverseGeocode,
 } from "@/lib/api";
+import {
+  storeSosRecipients,
+  type SosRecipient,
+} from "@/lib/sosRecipients";
 import { parseGPSCoordinates as validationParseGPS } from "@/lib/validation";
 import {
   handleApiError,
@@ -41,6 +45,30 @@ const RideStart = () => {
   const [isFromTracking, setIsFromTracking] = useState(false);
   const [preTrackingId, setPreTrackingId] = useState("");
   const [locationProgress, setLocationProgress] = useState(0);
+
+  // Friends & family to alert by SMS if the rider triggers SOS. Stored client-side
+  // on share (keyed by tracking id) and sent to the backend only when SOS fires.
+  const [emergencyContacts, setEmergencyContacts] = useState<SosRecipient[]>([
+    { name: "", phone: "" },
+  ]);
+
+  const updateContact = (
+    index: number,
+    field: keyof SosRecipient,
+    value: string
+  ) => {
+    setEmergencyContacts((prev) =>
+      prev.map((c, i) => (i === index ? { ...c, [field]: value } : c))
+    );
+  };
+
+  const addContact = () =>
+    setEmergencyContacts((prev) => [...prev, { name: "", phone: "" }]);
+
+  const removeContact = (index: number) =>
+    setEmergencyContacts((prev) =>
+      prev.length === 1 ? prev : prev.filter((_, i) => i !== index)
+    );
 
   // Use validation service for GPS parsing
   const parseGPSCoordinates = validationParseGPS;
@@ -311,6 +339,10 @@ const RideStart = () => {
         }
       }
 
+      // Persist the rider's chosen emergency contacts (friends & family) against
+      // this tracking id, so TrackRide can text them if SOS is triggered.
+      storeSosRecipients(trackingIdToUse, emergencyContacts);
+
       // Build tracking URL for the rider (sendingTrackingInfo=true)
       const riderTrackUrl = buildTrackingUrl({
         from: currentLocation,
@@ -487,6 +519,59 @@ const RideStart = () => {
             />
           </div>
         )}
+
+        {/* Emergency contacts (friends & family) — alerted by SMS on SOS */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-muted-foreground" />
+            <Label className="text-base font-medium">
+              Emergency contacts
+            </Label>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            If you trigger SOS during the ride, we&apos;ll text these people.
+          </p>
+          <div className="space-y-2">
+            {emergencyContacts.map((contact, index) => (
+              <div key={index} className="flex gap-2">
+                <Input
+                  placeholder="Name (optional)"
+                  value={contact.name ?? ""}
+                  onChange={(e) => updateContact(index, "name", e.target.value)}
+                  className="flex-1"
+                />
+                <Input
+                  type="tel"
+                  inputMode="tel"
+                  placeholder="Phone"
+                  value={contact.phone}
+                  onChange={(e) => updateContact(index, "phone", e.target.value)}
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => removeContact(index)}
+                  disabled={emergencyContacts.length === 1}
+                  aria-label="Remove contact"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={addContact}
+            className="gap-1"
+          >
+            <Plus className="h-4 w-4" />
+            Add another
+          </Button>
+        </div>
 
         {/* Share Button */}
         <Button
