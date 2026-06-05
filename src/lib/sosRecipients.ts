@@ -10,6 +10,12 @@
 
 const PREFIX = 'sos-recipients:';
 
+/**
+ * Device-global key holding the rider's last-used emergency contacts, so the
+ * share sheet can pre-fill them on the next ride instead of asking again.
+ */
+const REMEMBERED_KEY = `${PREFIX}__default__`;
+
 export interface SosRecipient {
   /** Optional display name (from manual entry / contact picker). */
   name?: string;
@@ -50,6 +56,32 @@ export function getSosRecipientPhones(trackingId: string): string[] {
   return getSosRecipients(trackingId)
     .map((r) => r.phone.trim())
     .filter(Boolean);
+}
+
+/**
+ * The rider's remembered emergency contacts (device-global), used to pre-fill
+ * the share sheet on subsequent rides.
+ */
+export function getRememberedRecipients(): SosRecipient[] {
+  try {
+    const raw = localStorage.getItem(REMEMBERED_KEY);
+    return raw ? (JSON.parse(raw) as SosRecipient[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function storeRememberedRecipients(recipients: SosRecipient[]): void {
+  try {
+    const cleaned = recipients.filter((r) => r.phone && r.phone.trim());
+    if (cleaned.length === 0) {
+      localStorage.removeItem(REMEMBERED_KEY);
+      return;
+    }
+    localStorage.setItem(REMEMBERED_KEY, JSON.stringify(cleaned));
+  } catch {
+    // Storage unavailable (private mode) — non-fatal.
+  }
 }
 
 export function clearSosRecipients(trackingId: string): void {
