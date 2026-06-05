@@ -523,6 +523,37 @@ const TrackRide = () => {
     // Need a position to send. Fall back to the initial parsed coordinate
     // if the geolocation hasn't yielded a fresh fix yet.
     const position = currentPosition || initialPosition;
+
+    // Alert the rider's chosen emergency contacts by SMS via the backend /sos.
+    // Done FIRST and independently of the watcher status-flip below, so a missing
+    // driverId/position can never stop the SOS SMS from going out. The numbers were
+    // stored on this device when the ride was shared. Best-effort; never throws.
+    if (trackingId) {
+      const recipients = getSosRecipientPhones(trackingId);
+      if (recipients.length > 0) {
+        debugLog("SOS: alerting emergency contacts", { trackingId, count: recipients.length });
+        void triggerSosAlert({
+          trackingId,
+          driverId,
+          driverName,
+          driverPlateNumber: carPlate,
+          position,
+          recipients,
+        });
+      } else {
+        debugLog(
+          "SOS: no emergency contacts stored for this ride — /sos not called.",
+          { trackingId },
+        );
+        toast({
+          title: "No emergency contacts",
+          description:
+            "SOS is active, but no friends/family were added for this ride, so no SMS was sent.",
+          variant: "destructive",
+        });
+      }
+    }
+
     if (!position || !trackingId || !driverId) {
       toast({
         title: "SOS triggered",
@@ -545,21 +576,6 @@ const TrackRide = () => {
         description:
           "Could not reach the server. Watchers may not see your alert until connection returns.",
         variant: "destructive",
-      });
-    }
-
-    // Notify the rider's chosen emergency contacts by SMS (sent server-side).
-    // The numbers were stored when the rider shared the ride. This is best-effort
-    // and never throws, so it can't block the SOS state above.
-    const recipients = getSosRecipientPhones(trackingId);
-    if (recipients.length > 0) {
-      void triggerSosAlert({
-        trackingId,
-        driverId,
-        driverName,
-        driverPlateNumber: carPlate,
-        position,
-        recipients,
       });
     }
   };
