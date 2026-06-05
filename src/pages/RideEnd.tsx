@@ -39,13 +39,13 @@ const RideEnd = () => {
   // param carries it; otherwise resolve it from the tracking session.
   const rideIdParam = searchParams.get("rideId") || "";
   const [confirmationId, setConfirmationId] = useState<string | null>(
-    rideIdParam || null
+    rideIdParam || null,
   );
 
   // Rider's decryption key, captured from the tracking link at /start and stored
   // against the confirmation id. Required to request the encrypted video.
   const [riderKey, setRiderKey] = useState<string | null>(
-    rideIdParam ? getRiderKey(rideIdParam) : null
+    rideIdParam ? getRiderKey(rideIdParam) : null,
   );
 
   // Rider satisfaction: null = unanswered. Choosing "Not satisfied" reveals the
@@ -233,7 +233,10 @@ const RideEnd = () => {
                 }`}
               >
                 {isSuccess ? (
-                  <CheckCircle2 className="h-14 w-14 text-success" strokeWidth={2.5} />
+                  <CheckCircle2
+                    className="h-14 w-14 text-success"
+                    strokeWidth={2.5}
+                  />
                 ) : (
                   <XCircle className="h-14 w-14 text-muted-foreground" />
                 )}
@@ -301,21 +304,24 @@ const RideEnd = () => {
           <>
             <SatisfactionPrompt selected={satisfied} onSelect={setSatisfied} />
             {satisfied === false && (
-              <RideVideoCard confirmationId={confirmationId} riderKey={riderKey} />
+              <RideVideoCard
+                confirmationId={confirmationId}
+                riderKey={riderKey}
+              />
             )}
           </>
         )}
 
         {/* Actions - Only shown for driver */}
         {viewerType === "driver" && (
-        <div className="w-full max-w-md space-y-3">
-          <Button variant="outline" className="w-full">
-            Report an Issue
-          </Button>
-          <Button onClick={() => navigate("/")} className="w-full" size="lg">
-            Done
-          </Button>
-        </div>
+          <div className="w-full max-w-md space-y-3">
+            <Button variant="outline" className="w-full">
+              Report an Issue
+            </Button>
+            <Button onClick={() => navigate("/")} className="w-full" size="lg">
+              Done
+            </Button>
+          </div>
         )}
       </div>
     </div>
