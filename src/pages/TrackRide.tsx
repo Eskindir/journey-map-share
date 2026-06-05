@@ -34,12 +34,14 @@ import {
   sendLocationUpdate,
   closeTracking,
   getTrackingInfo,
+  triggerSosAlert,
   reverseGeocode as apiReverseGeocode,
   snapPositionWithHistory,
   type Position,
   type CloseTrackingRequest,
   type NormalizedDriverInfo,
 } from "@/lib/api";
+import { getSosRecipientPhones } from "@/lib/sosRecipients";
 import { parseGPSCoordinates } from "@/lib/validation";
 import { handleApiError } from "@/lib/errors";
 import { useDriverLocation } from "@/hooks/useDriverLocation";
@@ -543,6 +545,21 @@ const TrackRide = () => {
         description:
           "Could not reach the server. Watchers may not see your alert until connection returns.",
         variant: "destructive",
+      });
+    }
+
+    // Notify the rider's chosen emergency contacts by SMS (sent server-side).
+    // The numbers were stored when the rider shared the ride. This is best-effort
+    // and never throws, so it can't block the SOS state above.
+    const recipients = getSosRecipientPhones(trackingId);
+    if (recipients.length > 0) {
+      void triggerSosAlert({
+        trackingId,
+        driverId,
+        driverName,
+        driverPlateNumber: carPlate,
+        position,
+        recipients,
       });
     }
   };
