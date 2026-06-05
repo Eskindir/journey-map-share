@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { MapPin, Navigation, Bell, Share2, Users, Plus, X } from "lucide-react";
+import { MapPin, Navigation, Bell, Share2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
 import { debugLog } from "@/lib/config";
@@ -14,8 +14,11 @@ import {
 } from "@/lib/api";
 import {
   storeSosRecipients,
+  storeRememberedRecipients,
+  getRememberedRecipients,
   type SosRecipient,
 } from "@/lib/sosRecipients";
+import { SosContactsSheet } from "@/components/SosContactsSheet";
 import { parseGPSCoordinates as validationParseGPS } from "@/lib/validation";
 import {
   handleApiError,
@@ -46,29 +49,14 @@ const RideStart = () => {
   const [preTrackingId, setPreTrackingId] = useState("");
   const [locationProgress, setLocationProgress] = useState(0);
 
-  // Friends & family to alert by SMS if the rider triggers SOS. Stored client-side
-  // on share (keyed by tracking id) and sent to the backend only when SOS fires.
-  const [emergencyContacts, setEmergencyContacts] = useState<SosRecipient[]>([
-    { name: "", phone: "" },
-  ]);
-
-  const updateContact = (
-    index: number,
-    field: keyof SosRecipient,
-    value: string
-  ) => {
-    setEmergencyContacts((prev) =>
-      prev.map((c, i) => (i === index ? { ...c, [field]: value } : c))
-    );
-  };
-
-  const addContact = () =>
-    setEmergencyContacts((prev) => [...prev, { name: "", phone: "" }]);
-
-  const removeContact = (index: number) =>
-    setEmergencyContacts((prev) =>
-      prev.length === 1 ? prev : prev.filter((_, i) => i !== index)
-    );
+  // Friends & family to alert by SMS if the rider triggers SOS. Captured in the
+  // guided share sheet, pre-filled from the rider's last-used (remembered)
+  // contacts, then stored client-side on share and sent to the backend only when
+  // SOS fires.
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [rememberedContacts] = useState<SosRecipient[]>(() =>
+    getRememberedRecipients()
+  );
 
   // Use validation service for GPS parsing
   const parseGPSCoordinates = validationParseGPS;
@@ -253,7 +241,27 @@ const RideStart = () => {
     return () => clearInterval(interval);
   }, [isLoadingLocation]);
 
-  const shareRide = async () => {
+  // Validate the trip details, then open the guided sheet to capture emergency
+  // contacts before the actual share. Contacts are hard-required, so the share
+  // itself happens in shareRide once the sheet confirms at least one.
+  const handleShareClick = () => {
+    if (!currentLocation || !destination) {
+      showError(
+        ErrorCode.VALIDATION_ERROR,
+        "Please enter your location and destination.",
+      );
+      return;
+    }
+
+    if (!parseGPSCoordinates(currentLocation) || !parseGPSCoordinates(destination)) {
+      showError(ErrorCode.INVALID_COORDINATES);
+      return;
+    }
+
+    setSheetOpen(true);
+  };
+
+  const shareRide = async (emergencyContacts: SosRecipient[]) => {
     if (!currentLocation || !destination) {
       showError(
         ErrorCode.VALIDATION_ERROR,
@@ -340,8 +348,10 @@ const RideStart = () => {
       }
 
       // Persist the rider's chosen emergency contacts (friends & family) against
-      // this tracking id, so TrackRide can text them if SOS is triggered.
+      // this tracking id, so TrackRide can text them if SOS is triggered. Also
+      // remember them device-wide to pre-fill the next ride's share sheet.
       storeSosRecipients(trackingIdToUse, emergencyContacts);
+      storeRememberedRecipients(emergencyContacts);
 
       // Build tracking URL for the rider (sendingTrackingInfo=true)
       const riderTrackUrl = buildTrackingUrl({
@@ -520,62 +530,9 @@ const RideStart = () => {
           </div>
         )}
 
-        {/* Emergency contacts (friends & family) — alerted by SMS on SOS */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-muted-foreground" />
-            <Label className="text-base font-medium">
-              Emergency contacts
-            </Label>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            If you trigger SOS during the ride, we&apos;ll text these people.
-          </p>
-          <div className="space-y-2">
-            {emergencyContacts.map((contact, index) => (
-              <div key={index} className="flex gap-2">
-                <Input
-                  placeholder="Name (optional)"
-                  value={contact.name ?? ""}
-                  onChange={(e) => updateContact(index, "name", e.target.value)}
-                  className="flex-1"
-                />
-                <Input
-                  type="tel"
-                  inputMode="tel"
-                  placeholder="Phone"
-                  value={contact.phone}
-                  onChange={(e) => updateContact(index, "phone", e.target.value)}
-                  className="flex-1"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={() => removeContact(index)}
-                  disabled={emergencyContacts.length === 1}
-                  aria-label="Remove contact"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            ))}
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={addContact}
-            className="gap-1"
-          >
-            <Plus className="h-4 w-4" />
-            Add another
-          </Button>
-        </div>
-
-        {/* Share Button */}
+        {/* Share Button — opens the guided sheet to capture emergency contacts */}
         <Button
-          onClick={shareRide}
+          onClick={handleShareClick}
           className="w-full h-12 text-base"
           size="lg"
           disabled={isSubmitting}
@@ -588,8 +545,17 @@ const RideStart = () => {
         <p className="text-xs text-muted-foreground text-center px-4">
           {isSubmitting
             ? "Please wait while we initiate your ride tracking..."
-            : "Your device's share menu will open so you can pick where to send the tracking link."}
+            : "We'll ask who to alert on SOS, then your device's share menu opens to send the tracking link."}
         </p>
+
+        {/* Guided emergency-contacts step (shown on Share) */}
+        <SosContactsSheet
+          open={sheetOpen}
+          initialContacts={rememberedContacts}
+          isSubmitting={isSubmitting}
+          onConfirm={(contacts) => shareRide(contacts)}
+          onCancel={() => setSheetOpen(false)}
+        />
 
         {/* Test Notifications Link */}
         <div className="pt-4 border-t border-border">
