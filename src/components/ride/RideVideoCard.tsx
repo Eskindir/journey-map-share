@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -9,6 +10,7 @@ import {
   Clock,
 } from "lucide-react";
 import { useVideoRequest } from "@/hooks/useVideoRequest";
+import { getRiderVideoRequestUrl } from "@/lib/api/video";
 
 interface RideVideoCardProps {
   /** Ride confirmation to request the video for. Null while still resolving. */
@@ -38,6 +40,20 @@ const RideVideoCard = ({ confirmationId, riderKey }: RideVideoCardProps) => {
 
   const disabled = isBusy || !confirmationId;
 
+  // Debug aid: reveal the request endpoint URL once the rider taps request.
+  const [showRequestUrl, setShowRequestUrl] = useState(false);
+  const requestUrl = getRiderVideoRequestUrl();
+
+  const handleRequest = () => {
+    setShowRequestUrl(true);
+    requestVideo();
+  };
+
+  const handleRetry = () => {
+    setShowRequestUrl(true);
+    retry();
+  };
+
   return (
     <Card className="w-full max-w-md border-primary/30">
       <CardContent className="p-6 space-y-4">
@@ -64,7 +80,7 @@ const RideVideoCard = ({ confirmationId, riderKey }: RideVideoCardProps) => {
             <Button
               className="w-full gap-2"
               size="lg"
-              onClick={requestVideo}
+              onClick={handleRequest}
               disabled={disabled}
             >
               {isBusy ? (
@@ -147,7 +163,7 @@ const RideVideoCard = ({ confirmationId, riderKey }: RideVideoCardProps) => {
             </div>
             <Button
               className="w-full gap-2"
-              onClick={retry}
+              onClick={handleRetry}
               disabled={disabled}
             >
               {isBusy ? (
@@ -163,6 +179,18 @@ const RideVideoCard = ({ confirmationId, riderKey }: RideVideoCardProps) => {
         {/* Inline error for non-fatal action failures (e.g. open fallback) */}
         {state !== "failed" && error && (
           <p className="text-xs text-destructive text-center">{error}</p>
+        )}
+
+        {/* Debug: the endpoint the request is sent to, revealed on request. */}
+        {showRequestUrl && (
+          <div className="pt-2 border-t border-border">
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">
+              Request endpoint
+            </p>
+            <p className="text-[10px] font-mono break-all text-muted-foreground select-all">
+              POST {requestUrl}
+            </p>
+          </div>
         )}
       </CardContent>
     </Card>
