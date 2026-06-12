@@ -126,7 +126,7 @@ const MapView = ({
         : [];
 
     const polylineOptions = {
-      strokeColor: "#3b82f6",
+      strokeColor: "#2cab70",
       strokeOpacity: 0,
       strokeWeight: 2,
       icons: [
