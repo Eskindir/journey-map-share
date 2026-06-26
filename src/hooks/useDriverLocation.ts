@@ -51,19 +51,19 @@ export function useDriverLocation({
     }
 
     const maybeEmit = async (raw: Position, accuracy: number) => {
-      if (accuracy > MAX_ACCURACY_M) {
-        debugLog('Driver GPS skipped: poor accuracy', { accuracy });
-        return;
-      }
-
       if (processingRef.current) {
         return;
       }
 
       const now = Date.now();
       const lastSent = lastSentRef.current;
+      // Accuracy only gates the *extra* movement-triggered sends (so road snapping isn't fed
+      // jittery low-quality fixes). The heartbeat must still send every HEARTBEAT_MS regardless
+      // of accuracy — otherwise coarse desktop/WiFi fixes (and weak phone GPS) drop every update
+      // and nothing is ever reported.
+      const accurate = accuracy <= MAX_ACCURACY_M;
       const movedEnough =
-        !lastSent || distanceMeters(lastSent, raw) >= MIN_MOVE_M;
+        accurate && (!lastSent || distanceMeters(lastSent, raw) >= MIN_MOVE_M);
       const heartbeatDue = now - lastSentAtRef.current >= HEARTBEAT_MS;
 
       if (!movedEnough && !heartbeatDue) {
