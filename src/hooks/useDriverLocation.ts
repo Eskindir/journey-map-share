@@ -17,8 +17,8 @@ const MAX_ACCURACY_M = 40;
 /** Minimum movement before sending (meters). */
 const MIN_MOVE_M = 20;
 
-/** Heartbeat interval when stationary (ms). */
-const HEARTBEAT_MS = 15_000;
+/** Heartbeat interval when stationary (ms). Spec: send a geolocation every 5 seconds. */
+const HEARTBEAT_MS = 5_000;
 
 export interface DriverLocationFix {
   raw: Position;
