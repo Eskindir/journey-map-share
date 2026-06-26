@@ -662,6 +662,73 @@ const TrackRide = () => {
     }
   };
 
+  // Sender (sendingTrackingInfo=true) status polling. The sender pushes its own GPS but
+  // otherwise never learns the ride was ended elsewhere (driver/dispatch closing it on the
+  // backend). Poll the server ride status so the sender also navigates to /ride-end when the
+  // ride ends — mirroring the watcher's detection, without touching the sender's local position.
+  const endNavigatedRef = useRef(false);
+  useEffect(() => {
+    if (!sendingTrackingInfo || !trackingId) return;
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        const latest = await getLatestLocation(trackingId);
+        if (!latest || cancelled) return;
+
+        // Reflect SOS so the sender's UI matches the server state.
+        setSosActivated(latest.rideStatus === "SOS");
+
+        const ended =
+          latest.rideStatus !== "SOS" &&
+          (!latest.isRideActive ||
+            ["ArrivedSafely", "RideEndedByDriver", "Cancelled"].includes(
+              latest.rideStatus,
+            ));
+
+        if (ended && !endNavigatedRef.current) {
+          endNavigatedRef.current = true;
+          const params = new URLSearchParams({
+            trackingId,
+            status: latest.rideStatus,
+            viewerType: "driver",
+            driverName,
+            plateNumber: carPlate,
+            modelType: carInfo,
+          });
+          if (latest.rideId) params.set("rideId", latest.rideId);
+          if (to) params.set("destination", to);
+          const lastPos = latest.position || currentPosition;
+          if (lastPos) {
+            params.set(
+              "lastPosition",
+              `${lastPos.latitude},${lastPos.longitude}`,
+            );
+          }
+          navigate(`/ride-end?${params.toString()}`);
+        }
+      } catch (e) {
+        debugLog("Sender status poll failed:", e);
+      }
+    };
+
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [
+    sendingTrackingInfo,
+    trackingId,
+    navigate,
+    driverName,
+    carPlate,
+    carInfo,
+    to,
+    currentPosition,
+  ]);
+
   return (
     <div className="min-h-screen bg-background relative">
       {/* Status Banners */}
