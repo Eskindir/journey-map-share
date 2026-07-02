@@ -15,6 +15,11 @@ export default defineConfig(({ mode }) => ({
     mode === "development" && componentTagger(),
     VitePWA({
       registerType: 'autoUpdate',
+      // We register the service worker ourselves in main.tsx so we can drive
+      // update checks and the auto-reload on new deployments. Leaving this on
+      // the default ('auto') would inject a second, bare registration that
+      // never reloads the page — the cause of stale JS until a manual refresh.
+      injectRegister: null,
       includeAssets: ['favicon.ico', 'robots.txt', 'apple-touch-icon.png'],
       manifest: {
         name: 'Journey Map Share',
