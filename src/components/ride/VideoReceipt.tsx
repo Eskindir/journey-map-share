@@ -8,6 +8,7 @@ import {
   Car,
   Clock,
   Download,
+  Loader2,
   MapPin,
   Phone,
   Play,
@@ -21,6 +22,9 @@ import MapView from "@/components/MapView";
 import besecLogo from "@/assets/app_logo.jpg";
 
 type LatLng = { latitude: number; longitude: number };
+
+/** How many seconds of the clip the preview plays before looping. */
+const PREVIEW_SECONDS = 15;
 
 export interface VideoReceiptProps {
   /** Publicly-resolvable ride confirmation id (also used as the receipt number). */
@@ -36,6 +40,23 @@ export interface VideoReceiptProps {
   isFailed?: boolean;
   /** Retry the video request after a failure. */
   onRetry?: () => void;
+
+  /**
+   * Hero mode. 'full' (default, short rides): the full video plays inline as today.
+   * 'preview' (long rides): a ~15s preview loops in the hero and Download prepares
+   * the full video on demand.
+   */
+  mode?: "preview" | "full";
+  /** Preview clip URL (preview mode). */
+  previewUrl?: string | null;
+  /** Preview request state (preview mode). */
+  previewState?: "idle" | "loading" | "ready" | "unavailable" | "failed";
+  /** Retry the preview request. */
+  onRetryPreview?: () => void;
+  /** Start preparing + downloading the full video (preview mode). */
+  onDownloadFull?: () => void;
+  /** True while the full video is being prepared after a Download tap. */
+  fullPending?: boolean;
 
   driver: {
     name: string;
@@ -110,13 +131,31 @@ const VideoReceipt = ({
   shareUrl,
   isFailed,
   onRetry,
+  mode = "full",
+  previewUrl,
+  previewState = "idle",
+  onRetryPreview,
+  onDownloadFull,
+  fullPending,
   driver,
   trip,
   map,
   locationHistory,
 }: VideoReceiptProps) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const previewRef = useRef<HTMLVideoElement | null>(null);
   const [videoReady, setVideoReady] = useState(false);
+
+  const isPreview = mode === "preview";
+
+  // Loop the opening PREVIEW_SECONDS of the preview clip.
+  const handlePreviewTimeUpdate = () => {
+    const el = previewRef.current;
+    if (el && el.currentTime >= PREVIEW_SECONDS) {
+      el.currentTime = 0;
+      void el.play().catch(() => {});
+    }
+  };
 
   const resolvedShareUrl = useMemo(() => {
     if (shareUrl) return shareUrl;
@@ -237,7 +276,44 @@ const VideoReceipt = ({
       <CardContent className="p-0">
         {/* Video hero (the receipt's "line item") */}
         <div className="relative aspect-video w-full bg-muted">
-          {videoUrl ? (
+          {isPreview ? (
+            /* PREVIEW MODE — ~15s looping clip; full video is on-demand (Download). */
+            previewState === "ready" && previewUrl ? (
+              <>
+                <video
+                  ref={previewRef}
+                  src={previewUrl}
+                  muted
+                  autoPlay
+                  loop
+                  playsInline
+                  preload="metadata"
+                  onTimeUpdate={handlePreviewTimeUpdate}
+                  className="h-full w-full object-cover"
+                />
+                <span className="pointer-events-none absolute right-3 top-3 rounded-full bg-black/70 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-white backdrop-blur-sm">
+                  {PREVIEW_SECONDS}s preview
+                </span>
+              </>
+            ) : previewState === "failed" ? (
+              <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-gradient-to-br from-muted to-muted/40 px-6 text-center">
+                <div className="rounded-full bg-background p-3 shadow-sm">
+                  <AlertCircle className="h-6 w-6 text-destructive" />
+                </div>
+                <p className="text-sm font-medium">Couldn&apos;t load the preview</p>
+                {onRetryPreview && (
+                  <Button variant="outline" size="sm" onClick={onRetryPreview} className="gap-1.5">
+                    <RotateCw className="h-4 w-4" /> Try again
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-muted to-muted/40 text-center text-muted-foreground">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <p className="text-sm font-medium">Loading preview…</p>
+              </div>
+            )
+          ) : videoUrl ? (
             <>
               <video
                 ref={videoRef}
@@ -292,15 +368,35 @@ const VideoReceipt = ({
 
         {/* Video actions */}
         <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-3">
-          <Button
-            variant="default"
-            size="sm"
-            onClick={handleDownload}
-            disabled={!videoUrl}
-            className="gap-1.5"
-          >
-            <Download className="h-4 w-4" /> Download
-          </Button>
+          {isPreview ? (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={onDownloadFull}
+              disabled={fullPending || !onDownloadFull}
+              className="gap-1.5"
+            >
+              {fullPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Preparing full video…
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4" /> Download full video
+                </>
+              )}
+            </Button>
+          ) : (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleDownload}
+              disabled={!videoUrl}
+              className="gap-1.5"
+            >
+              <Download className="h-4 w-4" /> Download
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={handleShare} className="gap-1.5">
             <Share2 className="h-4 w-4" /> Share receipt
           </Button>
