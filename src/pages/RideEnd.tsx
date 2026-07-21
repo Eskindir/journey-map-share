@@ -1,38 +1,57 @@
-import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { CheckCircle2, XCircle, User, Car } from "lucide-react";
-import MapView from "@/components/MapView";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useSearchParams } from "react-router-dom";
 import { parseGPSCoordinates } from "@/lib/validation";
 import { isVideoFeatureEnabled } from "@/lib/config";
 import { getTrackingInfo } from "@/lib/api/tracking";
+import { reverseGeocode } from "@/lib/api/geocoding";
 import { getRiderKey } from "@/lib/riderKey";
-import SatisfactionPrompt from "@/components/ride/SatisfactionPrompt";
-import RideVideoCard from "@/components/ride/RideVideoCard";
+import { distanceMeters } from "@/lib/geo/distance";
+import { useVideoRequest } from "@/hooks/useVideoRequest";
+import VideoReceipt from "@/components/ride/VideoReceipt";
 
+type LatLng = { latitude: number; longitude: number };
+
+interface RideEndLocationState {
+  locationHistory?: LatLng[];
+}
+
+/**
+ * RideEnd — the video-receipt view.
+ *
+ * The screen is anchored on the ride's video recording, framed as a downloadable,
+ * ticket-style receipt: perforated header with the receipt number, a video hero,
+ * the travelled route, driver + vehicle, trip metadata, and a QR-linked
+ * verification stamp. The (encrypted) video is requested automatically on mount;
+ * the hero shows a "preparing…" state and fills in once the decrypt/merge lands.
+ */
 const RideEnd = () => {
-  const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  // Extract closure params from URL
+  // The traveled route, forwarded from TrackRide via router state. Absent on a
+  // hard reload — the map then degrades to last-position + destination only.
+  const locationHistory = useMemo<LatLng[]>(
+    () => (location.state as RideEndLocationState | null)?.locationHistory ?? [],
+    [location.state],
+  );
+
+  // ── Params ────────────────────────────────────────────────────────────────
   const trackingId = searchParams.get("trackingId") || "";
   const status = searchParams.get("status") || "ArrivedSafely";
-  const closedAtParam = searchParams.get("closedAt");
+  const closedAtParam = searchParams.get("closedAt") || undefined;
+  const startedAtParam = searchParams.get("startedAt") || undefined;
   const destination = searchParams.get("destination") || "";
+  const lastPositionParam = searchParams.get("lastPosition") || "";
+  const pickupParam = searchParams.get("pickup") || "";
 
-  // Extract driver info params
   const driverName = searchParams.get("driverName") || "";
   const plateNumber = searchParams.get("plateNumber") || "";
   const modelType = searchParams.get("modelType") || "";
   const pictureUrlParam = searchParams.get("pictureUrl");
   const pictureUrl = pictureUrlParam ? decodeURIComponent(pictureUrlParam) : "";
-
-  // Extract viewer type (driver or watcher)
-  const viewerType = (searchParams.get("viewerType") || "watcher") as
-    | "driver"
-    | "watcher";
+  const ratingParam = searchParams.get("rating");
+  const driverRating = ratingParam ? Number(ratingParam) : undefined;
+  const driverPhone = searchParams.get("phone") || "";
 
   // The video pipeline keys on the ride confirmation id. In the RideManager flow
   // the tracking session's rideId IS the confirmation id, so the existing rideId
@@ -41,25 +60,16 @@ const RideEnd = () => {
   const [confirmationId, setConfirmationId] = useState<string | null>(
     rideIdParam || null,
   );
-
   // Rider's decryption key, captured from the tracking link at /start and stored
   // against the confirmation id. Required to request the encrypted video.
   const [riderKey, setRiderKey] = useState<string | null>(
     rideIdParam ? getRiderKey(rideIdParam) : null,
   );
 
-  // Rider satisfaction: null = unanswered. Choosing "Not satisfied" reveals the
-  // video request flow.
-  const [satisfied, setSatisfied] = useState<boolean | null>(null);
-
-  // The video feature is gated on the rider's decryption key, not viewerType:
-  // only the rider (sender) captures a riderKey at /start, so its presence is
-  // what makes the flow usable. `videoConfigured` is the synchronous config gate
-  // used to drive key resolution; the visible flow waits for the key itself.
   const videoConfigured = isVideoFeatureEnabled();
 
-  // Resolve the confirmation id + rider key (and auto-reveal the card on return
-  // visits) once the rider is in the unsatisfied path or a request is persisted.
+  // Resolve the confirmation id + rider key so the receipt can request the
+  // (encrypted) video. Only the rider (sender) captures a rider key at /start.
   useEffect(() => {
     if (!videoConfigured || !trackingId) return;
     let cancelled = false;
@@ -74,19 +84,11 @@ const RideEnd = () => {
             setConfirmationId(info.rideId);
           }
         } catch {
-          // Non-fatal: the card stays disabled until the id resolves.
+          // Non-fatal: the receipt stays in "preparing" until the id resolves.
         }
       }
-      if (!cancelled && resolvedId) {
-        if (!riderKey) {
-          setRiderKey(getRiderKey(resolvedId));
-        }
-        // If a video request is already in progress/ready, reveal the card so the
-        // rider lands back in the right place.
-        const persisted = localStorage.getItem(`ride-video:${resolvedId}`);
-        if (persisted && satisfied === null) {
-          setSatisfied(false);
-        }
+      if (!cancelled && resolvedId && !riderKey) {
+        setRiderKey(getRiderKey(resolvedId));
       }
     };
 
@@ -94,236 +96,152 @@ const RideEnd = () => {
     return () => {
       cancelled = true;
     };
-  }, [videoConfigured, trackingId, confirmationId, riderKey, satisfied]);
+  }, [videoConfigured, trackingId, confirmationId, riderKey]);
 
-  // Show the video flow once we have the rider's key (rider/sender only).
-  const showVideoFlow = videoConfigured && !!riderKey;
+  // Drive the decrypt/merge + poll. `videoUrl` is the ready SAS link, if any.
+  const { state: videoState, videoUrl, requestVideo, retry } = useVideoRequest(
+    confirmationId,
+    riderKey,
+  );
 
-  // Parse destination coordinates for the map
-  const destinationPosition = destination
-    ? parseGPSCoordinates(destination)
-    : null;
-
-  // Parse last known driver position (may be absent on legacy links)
-  const lastPositionParam = searchParams.get("lastPosition") || "";
-  const lastPosition = lastPositionParam
-    ? parseGPSCoordinates(lastPositionParam)
-    : null;
-
-  // Check if driver info is available
-  const hasDriverInfo = Boolean(driverName);
-
-  // Format closure timestamp
-  const getFormattedTime = (): string => {
-    if (closedAtParam) {
-      try {
-        const date = new Date(closedAtParam);
-        return date.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        });
-      } catch {
-        // Fall through to default
-      }
+  // Auto-start assembly once, as soon as we have a confirmation id + rider key.
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (!confirmationId || !riderKey) return;
+    if (videoState === "idle" && !autoStartedRef.current) {
+      autoStartedRef.current = true;
+      requestVideo();
     }
-    // Fallback to current time
-    return new Date().toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+  }, [confirmationId, riderKey, videoState, requestVideo]);
 
-  // Get message based on ride status and viewer type
-  const getCompletionMessage = (): {
-    title: string;
-    subtitle: string;
-    isSuccess: boolean;
-  } => {
-    if (status === "Cancelled") {
-      return {
-        title: "Ride Cancelled",
-        subtitle: "The ride was cancelled.",
-        isSuccess: false,
+  const receiptId = confirmationId || rideIdParam || trackingId || "PENDING";
+
+  const destinationPosition = destination ? parseGPSCoordinates(destination) : null;
+  const lastPosition = lastPositionParam ? parseGPSCoordinates(lastPositionParam) : null;
+
+  // Human-readable pickup/dropoff, reverse-geocoded from the ride coordinates.
+  // Google's Geocoding API falls back to a "lat, lng" string on failure; we drop
+  // those so the receipt shows "—" rather than raw coordinates.
+  const [pickupLabel, setPickupLabel] = useState<string | undefined>();
+  const [dropoffLabel, setDropoffLabel] = useState<string | undefined>();
+  useEffect(() => {
+    let cancelled = false;
+    const looksLikeCoords = (s: string) =>
+      /^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/.test(s.trim());
+    const resolve = (
+      raw: string,
+      set: (v: string | undefined) => void,
+    ) => {
+      const pos = raw ? parseGPSCoordinates(raw) : null;
+      if (!pos) return;
+      reverseGeocode(pos).then((addr) => {
+        if (!cancelled && addr && !looksLikeCoords(addr)) set(addr);
+      });
+    };
+    resolve(pickupParam, setPickupLabel);
+    resolve(destination, setDropoffLabel);
+    return () => {
+      cancelled = true;
+    };
+  }, [pickupParam, destination]);
+
+  // Distance travelled, summed over the tracked route (km). Undefined when the
+  // route history is unavailable (e.g. hard reload) so the receipt shows "—".
+  const distanceKm = useMemo<number | undefined>(() => {
+    if (locationHistory.length < 2) return undefined;
+    let meters = 0;
+    for (let i = 1; i < locationHistory.length; i++) {
+      meters += distanceMeters(locationHistory[i - 1], locationHistory[i]);
+    }
+    if (meters < 10) return undefined;
+    return meters / 1000;
+  }, [locationHistory]);
+
+  const shareUrl = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return window.location.href;
+  }, []);
+
+  // Offline caching of the last receipt view — keeps the receipt readable
+  // (driver, trip, receipt id, QR) after a signal drop. The video itself is
+  // still fetched from the backend when playback is requested.
+  useEffect(() => {
+    if (!receiptId) return;
+    try {
+      const snapshot = {
+        receiptId,
+        driver: { name: driverName, pictureUrl, plate: plateNumber, model: modelType },
+        trip: {
+          pickupLabel,
+          dropoffLabel,
+          startedAt: startedAtParam,
+          endedAt: closedAtParam,
+          distanceKm,
+          status,
+        },
+        map: {
+          lastPosition: lastPosition || undefined,
+          destination: destinationPosition || undefined,
+        },
+        videoUrl: videoUrl || null,
+        shareUrl,
+        cachedAt: new Date().toISOString(),
       };
+      localStorage.setItem(`ride-receipt:${receiptId}`, JSON.stringify(snapshot));
+    } catch {
+      /* quota / private mode: safe to ignore */
     }
-
-    if (viewerType === "driver") {
-      switch (status) {
-        case "ArrivedSafely":
-          return {
-            title: "Customer has arrived safely",
-            subtitle: "The ride has been completed successfully.",
-            isSuccess: true,
-          };
-        case "RideEndedByDriver":
-          return {
-            title: "Ride finished",
-            subtitle: "You have ended the ride.",
-            isSuccess: true,
-          };
-        default:
-          return {
-            title: "Ride completed",
-            subtitle: "The ride has ended.",
-            isSuccess: true,
-          };
-      }
-    } else {
-      switch (status) {
-        case "ArrivedSafely":
-        case "RideEndedByDriver":
-          return {
-            title: "Rider has arrived safely!",
-            subtitle: "The ride has been completed successfully.",
-            isSuccess: true,
-          };
-        default:
-          return {
-            title: "Ride completed",
-            subtitle: "The ride has ended.",
-            isSuccess: true,
-          };
-      }
-    }
-  };
-
-  const {
-    title: completionTitle,
-    subtitle: completionSubtitle,
-    isSuccess,
-  } = getCompletionMessage();
-  const formattedTime = getFormattedTime();
+  }, [
+    receiptId,
+    driverName,
+    pictureUrl,
+    plateNumber,
+    modelType,
+    pickupLabel,
+    dropoffLabel,
+    startedAtParam,
+    closedAtParam,
+    distanceKm,
+    status,
+    lastPosition,
+    destinationPosition,
+    videoUrl,
+    shareUrl,
+  ]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 flex flex-col">
-      {/* Header */}
-      <header className="bg-card border-b border-border p-4">
-        <h1 className="text-xl font-semibold text-center">Ride Completed</h1>
-      </header>
-
-      {/* Map showing last known driver position and destination */}
-      {(lastPosition || destinationPosition) && (
-        <div className="w-full h-[45vh] md:h-[55vh] min-h-[280px] border-y border-border shadow-inner overflow-hidden">
-          <MapView
-            initialPosition={lastPosition || destinationPosition || undefined}
-            destinationPosition={destinationPosition || undefined}
-            showGoogleMap={true}
-          />
-        </div>
-      )}
-
-      {/* Main Content */}
-      <div className="flex-1 px-4 md:px-6 pt-6 pb-8 flex flex-col items-center gap-6 -mt-8 relative z-10">
-        {/* Completion Card */}
-        <Card
-          className={`w-full max-w-md shadow-2xl backdrop-blur-sm ${
-            isSuccess
-              ? "border-success/40 shadow-success/20 bg-card/95"
-              : "border-muted bg-card/95"
-          }`}
-        >
-          <CardContent className="p-8 text-center space-y-6">
-            {/* Success/Status Icon */}
-            <div className="flex justify-center">
-              <div
-                className={`w-24 h-24 rounded-full flex items-center justify-center ring-4 ${
-                  isSuccess
-                    ? "bg-gradient-to-br from-success/25 to-success/5 ring-success/20 animate-in zoom-in-50 duration-500"
-                    : "bg-muted ring-muted-foreground/20"
-                }`}
-              >
-                {isSuccess ? (
-                  <CheckCircle2
-                    className="h-14 w-14 text-success"
-                    strokeWidth={2.5}
-                  />
-                ) : (
-                  <XCircle className="h-14 w-14 text-muted-foreground" />
-                )}
-              </div>
-            </div>
-
-            {/* Completion Message */}
-            <div className="space-y-3">
-              <div className="flex justify-center">
-                <span
-                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide ${
-                    isSuccess
-                      ? "bg-success/10 text-success border border-success/30"
-                      : "bg-muted text-muted-foreground border border-border"
-                  }`}
-                >
-                  {isSuccess ? "Completed" : "Cancelled"}
-                </span>
-              </div>
-              <h2 className="text-2xl font-bold">{completionTitle}</h2>
-              <p className="text-muted-foreground">{completionSubtitle}</p>
-              <p className="text-sm text-muted-foreground">
-                {viewerType === "driver" ? "Your" : "The"} ride ended at{" "}
-                <span className="font-medium">{formattedTime}</span>
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Driver Info Card - Only shown when driver info is available */}
-        {hasDriverInfo && (
-          <Card className="w-full max-w-md">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                {/* Driver Photo */}
-                <Avatar className="h-16 w-16 border-2 border-border">
-                  {pictureUrl ? (
-                    <AvatarImage src={pictureUrl} alt={driverName} />
-                  ) : null}
-                  <AvatarFallback className="bg-muted">
-                    <User className="h-8 w-8 text-muted-foreground" />
-                  </AvatarFallback>
-                </Avatar>
-
-                {/* Driver Details */}
-                <div className="flex-1 space-y-1">
-                  <p className="font-semibold text-lg">{driverName}</p>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Car className="h-4 w-4" />
-                    <span>{modelType}</span>
-                  </div>
-                  {plateNumber && (
-                    <p className="text-sm font-mono text-muted-foreground">
-                      {plateNumber}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Rider satisfaction + video request (watcher view) */}
-        {showVideoFlow && (
-          <>
-            <SatisfactionPrompt selected={satisfied} onSelect={setSatisfied} />
-            {satisfied === false && (
-              <RideVideoCard
-                confirmationId={confirmationId}
-                riderKey={riderKey}
-              />
-            )}
-          </>
-        )}
-
-        {/* Actions - Only shown for driver */}
-        {viewerType === "driver" && (
-          <div className="w-full max-w-md space-y-3">
-            <Button variant="outline" className="w-full">
-              Report an Issue
-            </Button>
-            <Button onClick={() => navigate("/")} className="w-full" size="lg">
-              Done
-            </Button>
-          </div>
-        )}
-      </div>
+    <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 flex flex-col items-center px-4 md:px-6 py-6">
+      <VideoReceipt
+        receiptId={receiptId}
+        videoUrl={videoUrl}
+        shareUrl={shareUrl}
+        isFailed={videoState === "failed"}
+        onRetry={retry}
+        driver={{
+          name: driverName,
+          pictureUrl: pictureUrl || undefined,
+          plate: plateNumber || undefined,
+          model: modelType || undefined,
+          rating:
+            driverRating != null && !Number.isNaN(driverRating)
+              ? driverRating
+              : undefined,
+          phone: driverPhone || undefined,
+        }}
+        trip={{
+          pickupLabel,
+          dropoffLabel,
+          startedAt: startedAtParam,
+          endedAt: closedAtParam,
+          distanceKm,
+          status,
+        }}
+        map={{
+          lastPosition: lastPosition || undefined,
+          destination: destinationPosition || undefined,
+        }}
+        locationHistory={locationHistory}
+      />
     </div>
   );
 };
