@@ -140,6 +140,36 @@ const TrackRide = () => {
     locationHistoryRef.current = locationHistory;
   }, [locationHistory]);
 
+  // Stamp a ride start time once per tracking session so the ride-end receipt
+  // can show Start/Duration. Persisted (keyed by trackingId) to survive reloads.
+  useEffect(() => {
+    if (!trackingId) return;
+    const key = `ride-start:${trackingId}`;
+    try {
+      if (!localStorage.getItem(key)) {
+        localStorage.setItem(key, new Date().toISOString());
+      }
+    } catch {
+      /* storage unavailable — non-fatal */
+    }
+  }, [trackingId]);
+
+  // Common receipt metadata forwarded to /ride-end: pickup coords (for reverse
+  // geocoding), the ride start time, and the full driver details (photo, rating,
+  // phone) so the rider's receipt shows who drove them.
+  const appendReceiptMeta = (params: URLSearchParams) => {
+    if (initialPosition && from) params.set("pickup", from);
+    if (driverPhotoUrl) params.set("pictureUrl", encodeURIComponent(driverPhotoUrl));
+    if (driverRating != null) params.set("rating", String(driverRating));
+    if (driverPhone) params.set("phone", driverPhone);
+    try {
+      const start = localStorage.getItem(`ride-start:${trackingId}`);
+      if (start) params.set("startedAt", start);
+    } catch {
+      /* ignore */
+    }
+  };
+
   // Geocode initial position on mount
   useEffect(() => {
     if (initialPosition && !currentPosition) {
@@ -281,7 +311,12 @@ const TrackRide = () => {
               );
             }
 
-            navigate(`/ride-end?${params.toString()}`);
+            appendReceiptMeta(params);
+            params.set("closedAt", new Date().toISOString());
+
+            navigate(`/ride-end?${params.toString()}`, {
+              state: { locationHistory: locationHistoryRef.current },
+            });
             return;
           }
 
@@ -376,7 +411,11 @@ const TrackRide = () => {
             "lastPosition",
             `${snapped.latitude},${snapped.longitude}`,
           );
-          navigate(`/ride-end?${endParams.toString()}`);
+          appendReceiptMeta(endParams);
+          endParams.set("closedAt", new Date().toISOString());
+          navigate(`/ride-end?${endParams.toString()}`, {
+            state: { locationHistory: locationHistoryRef.current },
+          });
         }
       } catch (error) {
         debugLog("Error sending location update:", error);
@@ -647,7 +686,11 @@ const TrackRide = () => {
         params.set("pictureUrl", encodeURIComponent(driverPhotoUrl));
       }
 
-      navigate(`/ride-end?${params.toString()}`);
+      appendReceiptMeta(params);
+
+      navigate(`/ride-end?${params.toString()}`, {
+        state: { locationHistory: locationHistoryRef.current },
+      });
     } catch (error) {
       debugLog("Error closing tracking:", error);
 

@@ -25,6 +25,8 @@ export interface UseVideoRequestReturn {
   isBusy: boolean;
   /** True when generation is taking unusually long (soft warning, not failure). */
   isStalled: boolean;
+  /** Merged video SAS URL once ready; null while idle/generating/failed. */
+  videoUrl: string | null;
   /** Last error message, if any. */
   error: string | null;
   /** Start merging; the ready link is texted to the rider's phone when done. */
@@ -73,6 +75,7 @@ export function useVideoRequest(
   const [state, setState] = useState<VideoRequestState>('idle');
   const [isBusy, setIsBusy] = useState(false);
   const [isStalled, setIsStalled] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const mergedUrlRef = useRef<string | null>(null);
@@ -99,6 +102,7 @@ export function useVideoRequest(
     if (!confirmationId) {
       setState('idle');
       mergedUrlRef.current = null;
+      setVideoUrl(null);
       requestedAtRef.current = null;
       return;
     }
@@ -106,10 +110,12 @@ export function useVideoRequest(
     if (persisted) {
       setState(persisted.state);
       mergedUrlRef.current = persisted.mergedUrl;
+      setVideoUrl(persisted.state === 'ready' ? persisted.mergedUrl : null);
       requestedAtRef.current = persisted.requestedAt;
     } else {
       setState('idle');
       mergedUrlRef.current = null;
+      setVideoUrl(null);
       requestedAtRef.current = null;
     }
   }, [confirmationId]);
@@ -124,6 +130,7 @@ export function useVideoRequest(
   const markReady = useCallback(
     (url: string) => {
       mergedUrlRef.current = url;
+      setVideoUrl(url);
       setState('ready');
       persist({ state: 'ready', mergedUrl: url });
     },
@@ -251,6 +258,7 @@ export function useVideoRequest(
     state,
     isBusy,
     isStalled,
+    videoUrl,
     error,
     requestVideo,
     openInApp,
