@@ -122,6 +122,27 @@
   }
 }
 
+@layer utilities {
+  /* Torn-paper bottom edge — cuts the element's bottom into a sawtooth so the
+     card reads as a stub torn from a receipt booklet. Two mask layers: a solid
+     body (everything above the teeth) plus a repeating conic-gradient of
+     downward triangles along the very bottom. Color-independent, so it works in
+     both themes. Pair with `rounded-b-none` and a `drop-shadow` wrapper so the
+     elevation follows the torn silhouette. */
+  .receipt-torn-bottom {
+    --tooth-w: 18px;
+    --tooth-h: 11px;
+    -webkit-mask:
+      linear-gradient(#000 0 0) top / 100% calc(100% - var(--tooth-h)) no-repeat,
+      conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg)
+        bottom / var(--tooth-w) var(--tooth-h) repeat-x;
+    mask:
+      linear-gradient(#000 0 0) top / 100% calc(100% - var(--tooth-h)) no-repeat,
+      conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg)
+        bottom / var(--tooth-w) var(--tooth-h) repeat-x;
+  }
+}
+
 @layer base {
   * {
     @apply border-border;

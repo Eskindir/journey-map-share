@@ -18,6 +18,7 @@ import {
   User,
 } from "lucide-react";
 import MapView from "@/components/MapView";
+import besecLogo from "@/assets/app_logo.jpg";
 
 type LatLng = { latitude: number; longitude: number };
 
@@ -177,9 +178,10 @@ const VideoReceipt = ({
   };
 
   return (
-    <Card className="w-full max-w-lg bg-card/95 backdrop-blur-sm shadow-2xl border-border/60 overflow-hidden">
+    <div className="w-full max-w-lg drop-shadow-xl">
+    <Card className="receipt-torn-bottom w-full rounded-b-none bg-gradient-to-b from-card via-card to-accent/20 backdrop-blur-sm border-border/60 overflow-hidden">
       {/* Perforated ticket header */}
-      <div className="relative bg-gradient-to-br from-primary/10 to-primary/0 px-6 pt-6 pb-8 border-b border-dashed border-border">
+      <div className="relative bg-gradient-to-br from-primary/15 via-accent/40 to-card px-6 pt-6 pb-8 border-b-2 border-dashed border-muted-foreground/40">
         <div
           aria-hidden
           className="absolute -left-3 -bottom-3 h-6 w-6 rounded-full bg-background"
@@ -188,21 +190,41 @@ const VideoReceipt = ({
           aria-hidden
           className="absolute -right-3 -bottom-3 h-6 w-6 rounded-full bg-background"
         />
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
-              Ride Receipt
-            </p>
-            <p className="mt-1 text-lg font-mono font-semibold tracking-tight">
-              #{receiptId.slice(0, 10).toUpperCase()}
-            </p>
+        <div className="flex items-start justify-between gap-3">
+          {/* BeSEC brand lockup */}
+          <div className="flex items-center gap-3">
+            <img
+              src={besecLogo}
+              alt="BeSEC"
+              className="h-11 w-11 shrink-0 rounded-xl bg-white p-1 shadow-sm ring-1 ring-border/50"
+            />
+            <div>
+              <p className="font-display text-xl font-bold leading-none tracking-tight">
+                BeSEC
+              </p>
+              <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
+                Video Receipt
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-success">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            {statusLabel}
+          <div className="flex flex-col items-end gap-1.5">
+            <div className="flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-success">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              {statusLabel}
+            </div>
+            {typeof driver.rating === "number" && (
+              <div className="flex items-center gap-1 rounded-full border border-warning/30 bg-warning/10 px-2.5 py-0.5 text-xs font-semibold text-warning">
+                <Star className="h-3.5 w-3.5 fill-current" />
+                {driver.rating.toFixed(1)}
+              </div>
+            )}
           </div>
         </div>
-        <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
+        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span className="font-mono font-semibold tracking-tight text-foreground">
+            #{receiptId.slice(0, 10).toUpperCase()}
+          </span>
+          <span>·</span>
           <span className="inline-flex items-center gap-1">
             <Clock className="h-3.5 w-3.5" />
             {formatDate(trip.endedAt)} · {formatTime(trip.endedAt)}
@@ -269,7 +291,7 @@ const VideoReceipt = ({
         </div>
 
         {/* Video actions */}
-        <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+        <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-3">
           <Button
             variant="default"
             size="sm"
@@ -286,7 +308,7 @@ const VideoReceipt = ({
 
         {/* Route strip */}
         {(map?.lastPosition || map?.destination) && (
-          <div className="border-b border-border">
+          <div className="border-b border-border bg-muted/40">
             <div className="flex items-center justify-between px-4 pt-3 pb-2">
               <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
                 Route
@@ -305,7 +327,7 @@ const VideoReceipt = ({
         )}
 
         {/* Driver + vehicle */}
-        <div className="border-b border-border px-4 py-4">
+        <div className="border-b border-border bg-accent/30 px-4 py-4">
           <p className="mb-3 text-[10px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
             Driver
           </p>
@@ -322,7 +344,7 @@ const VideoReceipt = ({
                   {driver.name || "Unknown driver"}
                 </p>
                 {typeof driver.rating === "number" && (
-                  <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-amber-600 dark:text-amber-500">
+                  <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-warning/10 px-1.5 py-0.5 text-[11px] font-semibold text-warning">
                     <Star className="h-3 w-3 fill-current" />
                     {driver.rating.toFixed(1)}
                   </span>
@@ -351,7 +373,7 @@ const VideoReceipt = ({
         </div>
 
         {/* Trip line items */}
-        <div className="border-b border-border px-4 py-4">
+        <div className="border-b border-border bg-muted/40 px-4 py-4">
           <p className="mb-3 text-[10px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
             Trip
           </p>
@@ -390,7 +412,7 @@ const VideoReceipt = ({
         </div>
 
         {/* Security stamp + QR */}
-        <div className="flex items-center gap-4 px-4 py-4">
+        <div className="flex items-center gap-4 bg-gradient-to-br from-success/10 to-accent/25 px-4 py-4">
           {qrSrc && (
             <img
               src={qrSrc}
@@ -416,14 +438,15 @@ const VideoReceipt = ({
           </div>
         </div>
 
-        {/* Perforated footer */}
-        <div className="relative border-t border-dashed border-border bg-muted/30 px-4 py-3 text-center text-[10px] font-mono uppercase tracking-[0.25em] text-muted-foreground">
+        {/* Perforated footer — bottom padding leaves room for the torn sawtooth */}
+        <div className="relative border-t-2 border-dashed border-muted-foreground/40 bg-muted/40 px-4 pt-3 pb-7 text-center text-[10px] font-mono uppercase tracking-[0.25em] text-muted-foreground">
           <div aria-hidden className="absolute -left-3 -top-3 h-6 w-6 rounded-full bg-background" />
           <div aria-hidden className="absolute -right-3 -top-3 h-6 w-6 rounded-full bg-background" />
           End of receipt
         </div>
       </CardContent>
     </Card>
+    </div>
   );
 };
 
