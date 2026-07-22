@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { parseGPSCoordinates } from "@/lib/validation";
 import { isVideoFeatureEnabled } from "@/lib/config";
@@ -7,7 +7,11 @@ import { reverseGeocode } from "@/lib/api/geocoding";
 import { getRiderKey } from "@/lib/riderKey";
 import { distanceMeters } from "@/lib/geo/distance";
 import { useVideoRequest } from "@/hooks/useVideoRequest";
+import { useVideoPreview } from "@/hooks/useVideoPreview";
 import VideoReceipt from "@/components/ride/VideoReceipt";
+
+/** Rides shorter than this show the full video inline (no preview needed). */
+const SHORT_RIDE_MS = 3 * 60_000;
 
 type LatLng = { latitude: number; longitude: number };
 
@@ -98,21 +102,58 @@ const RideEnd = () => {
     };
   }, [videoConfigured, trackingId, confirmationId, riderKey]);
 
-  // Drive the decrypt/merge + poll. `videoUrl` is the ready SAS link, if any.
+  // Ride length decides the experience: < 3 min → show the full video inline as
+  // today; ≥ 3 min → a cheap ~15s preview + on-demand full download.
+  const durationMs = useMemo<number | null>(() => {
+    if (!startedAtParam || !closedAtParam) return null;
+    const s = new Date(startedAtParam).getTime();
+    const e = new Date(closedAtParam).getTime();
+    if (Number.isNaN(s) || Number.isNaN(e) || e <= s) return null;
+    return e - s;
+  }, [startedAtParam, closedAtParam]);
+  const isShortRide = durationMs != null && durationMs < SHORT_RIDE_MS;
+
+  // Cheap preview (long rides). Auto-requested by the hook.
+  const {
+    previewState,
+    previewUrl,
+    retry: retryPreview,
+  } = useVideoPreview(isShortRide ? null : confirmationId, riderKey);
+
+  // Full video: on-demand for long rides (Download), auto for short rides.
   const { state: videoState, videoUrl, requestVideo, retry } = useVideoRequest(
     confirmationId,
     riderKey,
   );
 
-  // Auto-start assembly once, as soon as we have a confirmation id + rider key.
+  // If the ride has no preview clip, fall back to showing the full video inline.
+  const mode: "preview" | "full" =
+    isShortRide || previewState === "unavailable" ? "full" : "preview";
+
+  // Auto-start the full merge only in full mode (short ride / preview fallback).
   const autoStartedRef = useRef(false);
   useEffect(() => {
+    if (mode !== "full") return;
     if (!confirmationId || !riderKey) return;
     if (videoState === "idle" && !autoStartedRef.current) {
       autoStartedRef.current = true;
       requestVideo();
     }
-  }, [confirmationId, riderKey, videoState, requestVideo]);
+  }, [mode, confirmationId, riderKey, videoState, requestVideo]);
+
+  // Preview-mode Download: prepare the full video on demand, then save it once ready.
+  const [downloadRequested, setDownloadRequested] = useState(false);
+  const handleDownloadFull = useCallback(() => {
+    setDownloadRequested(true);
+    requestVideo();
+  }, [requestVideo]);
+  useEffect(() => {
+    if (downloadRequested && videoUrl) {
+      window.open(videoUrl, "_blank", "noopener,noreferrer");
+      setDownloadRequested(false);
+    }
+  }, [downloadRequested, videoUrl]);
+  const fullPending = downloadRequested && videoState !== "ready";
 
   const receiptId = confirmationId || rideIdParam || trackingId || "PENDING";
 
@@ -215,8 +256,15 @@ const RideEnd = () => {
         receiptId={receiptId}
         videoUrl={videoUrl}
         shareUrl={shareUrl}
+        showVideo={!!riderKey}
         isFailed={videoState === "failed"}
         onRetry={retry}
+        mode={mode}
+        previewUrl={previewUrl}
+        previewState={previewState}
+        onRetryPreview={retryPreview}
+        onDownloadFull={handleDownloadFull}
+        fullPending={fullPending}
         driver={{
           name: driverName,
           pictureUrl: pictureUrl || undefined,

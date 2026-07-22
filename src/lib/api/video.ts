@@ -20,6 +20,15 @@ export type RiderVideoResult =
   | { status: 'processing' }
   | { status: 'error'; message: string };
 
+/**
+ * Preview request result. `unavailable` means the ride has no preview clip (404)
+ * — the caller should fall back to the full-video flow.
+ */
+export type RiderPreviewResult =
+  | { status: 'ready'; url: string }
+  | { status: 'unavailable' }
+  | { status: 'error'; message: string };
+
 export interface TelegramLinkResult {
   linkToken: string;
   botUsername: string;
@@ -50,6 +59,43 @@ function videoRequestOptions() {
  */
 export function getRiderVideoRequestUrl(): string {
   return `${config.videoApi.baseUrl}${buildVideoEndpoint('decrypt/rider-by-confirmation')}`;
+}
+
+/**
+ * Request the rider's ~15-second preview clip. Fast (single decrypted clip, no
+ * merge). Returns 'ready' with the SAS URL, 'unavailable' when the ride has no
+ * preview clip yet (caller falls back to the full video), or 'error'.
+ */
+export async function requestRiderPreview(
+  confirmationId: string,
+  riderKey: string
+): Promise<RiderPreviewResult> {
+  debugLog('Requesting rider preview for confirmation:', confirmationId);
+
+  try {
+    const response = await apiPost<unknown>(
+      buildVideoEndpoint('decrypt/rider-preview-by-confirmation'),
+      { confirmationId, riderKey },
+      videoRequestOptions()
+    );
+
+    const raw = (response ?? {}) as Record<string, unknown>;
+    const url = (raw.previewVideoUrl ?? raw.PreviewVideoUrl) as string | undefined;
+    if (url) {
+      return { status: 'ready', url };
+    }
+    return { status: 'error', message: 'Preview URL missing in response.' };
+  } catch (error) {
+    const status = (error as { status?: number }).status;
+    // 404 = no preview clip for this ride → fall back to the full video.
+    if (status === 404) {
+      return { status: 'unavailable' };
+    }
+    const message =
+      error instanceof Error ? error.message : 'Could not retrieve the preview.';
+    debugLog('Rider preview request failed:', error);
+    return { status: 'error', message };
+  }
 }
 
 /**

@@ -6,8 +6,10 @@ import {
   AlertCircle,
   BadgeCheck,
   Car,
+  CheckCircle2,
   Clock,
   Download,
+  Loader2,
   MapPin,
   Phone,
   Play,
@@ -22,6 +24,9 @@ import besecLogo from "@/assets/app_logo.jpg";
 
 type LatLng = { latitude: number; longitude: number };
 
+/** How many seconds of the clip the preview plays before looping. */
+const PREVIEW_SECONDS = 15;
+
 export interface VideoReceiptProps {
   /** Publicly-resolvable ride confirmation id (also used as the receipt number). */
   receiptId: string;
@@ -32,10 +37,34 @@ export interface VideoReceiptProps {
   /** URL used for the QR code + share sheet. Falls back to window.location.href. */
   shareUrl?: string;
 
+  /**
+   * Whether to show the video (rider only). Friends & family following the ride
+   * don't have the rider's key, so instead of the player they see an arrival
+   * confirmation. Default true.
+   */
+  showVideo?: boolean;
+
   /** True when the video request/merge has failed (shows a retry affordance). */
   isFailed?: boolean;
   /** Retry the video request after a failure. */
   onRetry?: () => void;
+
+  /**
+   * Hero mode. 'full' (default, short rides): the full video plays inline as today.
+   * 'preview' (long rides): a ~15s preview loops in the hero and Download prepares
+   * the full video on demand.
+   */
+  mode?: "preview" | "full";
+  /** Preview clip URL (preview mode). */
+  previewUrl?: string | null;
+  /** Preview request state (preview mode). */
+  previewState?: "idle" | "loading" | "ready" | "unavailable" | "failed";
+  /** Retry the preview request. */
+  onRetryPreview?: () => void;
+  /** Start preparing + downloading the full video (preview mode). */
+  onDownloadFull?: () => void;
+  /** True while the full video is being prepared after a Download tap. */
+  fullPending?: boolean;
 
   driver: {
     name: string;
@@ -108,8 +137,15 @@ const VideoReceipt = ({
   videoUrl,
   posterUrl,
   shareUrl,
+  showVideo = true,
   isFailed,
   onRetry,
+  mode = "full",
+  previewUrl,
+  previewState = "idle",
+  onRetryPreview,
+  onDownloadFull,
+  fullPending,
   driver,
   trip,
   map,
@@ -117,6 +153,8 @@ const VideoReceipt = ({
 }: VideoReceiptProps) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [videoReady, setVideoReady] = useState(false);
+
+  const isPreview = mode === "preview";
 
   const resolvedShareUrl = useMemo(() => {
     if (shareUrl) return shareUrl;
@@ -136,6 +174,9 @@ const VideoReceipt = ({
       : trip.status === "RideEndedByDriver"
         ? "Ended by driver"
         : "Arrived safely";
+
+  const arrivalLabel =
+    trip.status === "Cancelled" ? "Ride cancelled" : "Customer has arrived";
 
   const handleDownload = async () => {
     if (!videoUrl) return;
@@ -203,7 +244,7 @@ const VideoReceipt = ({
                 BeSEC
               </p>
               <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
-                Video Receipt
+                {showVideo ? "Video Receipt" : "Ride Summary"}
               </p>
             </div>
           </div>
@@ -237,7 +278,57 @@ const VideoReceipt = ({
       <CardContent className="p-0">
         {/* Video hero (the receipt's "line item") */}
         <div className="relative aspect-video w-full bg-muted">
-          {videoUrl ? (
+          {!showVideo ? (
+            /* Friends & family don't have the rider's key — show an arrival
+               confirmation instead of the video. */
+            <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-gradient-to-br from-success/15 via-success/5 to-transparent px-6 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-success/15 ring-4 ring-success/10">
+                <CheckCircle2 className="h-9 w-9 text-success" strokeWidth={2.5} />
+              </div>
+              <div className="space-y-1">
+                <p className="text-lg font-semibold">{arrivalLabel}</p>
+                <p className="text-xs text-muted-foreground">
+                  The ride has been completed.
+                </p>
+              </div>
+            </div>
+          ) : isPreview ? (
+            /* PREVIEW MODE — ~15s looping clip; full video is on-demand (Download). */
+            previewState === "ready" && previewUrl ? (
+              <>
+                <video
+                  src={previewUrl}
+                  controls
+                  autoPlay
+                  muted
+                  loop
+                  playsInline
+                  preload="metadata"
+                  className="h-full w-full object-contain bg-black"
+                />
+                <span className="pointer-events-none absolute right-3 top-3 rounded-full bg-black/70 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-white backdrop-blur-sm">
+                  {PREVIEW_SECONDS}s preview
+                </span>
+              </>
+            ) : previewState === "failed" ? (
+              <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-gradient-to-br from-muted to-muted/40 px-6 text-center">
+                <div className="rounded-full bg-background p-3 shadow-sm">
+                  <AlertCircle className="h-6 w-6 text-destructive" />
+                </div>
+                <p className="text-sm font-medium">Couldn&apos;t load the preview</p>
+                {onRetryPreview && (
+                  <Button variant="outline" size="sm" onClick={onRetryPreview} className="gap-1.5">
+                    <RotateCw className="h-4 w-4" /> Try again
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-muted to-muted/40 text-center text-muted-foreground">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <p className="text-sm font-medium">Loading preview…</p>
+              </div>
+            )
+          ) : videoUrl ? (
             <>
               <video
                 ref={videoRef}
@@ -285,26 +376,50 @@ const VideoReceipt = ({
               </p>
             </div>
           )}
-          <div className="absolute left-3 top-3 rounded-md bg-black/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-white/90">
-            Rec · {receiptId.slice(-6).toUpperCase()}
-          </div>
+          {showVideo && (
+            <div className="absolute left-3 top-3 rounded-md bg-black/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-white/90">
+              Rec · {receiptId.slice(-6).toUpperCase()}
+            </div>
+          )}
         </div>
 
-        {/* Video actions */}
+        {/* Video actions (rider only) */}
+        {showVideo && (
         <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-3">
-          <Button
-            variant="default"
-            size="sm"
-            onClick={handleDownload}
-            disabled={!videoUrl}
-            className="gap-1.5"
-          >
-            <Download className="h-4 w-4" /> Download
-          </Button>
+          {isPreview ? (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={onDownloadFull}
+              disabled={fullPending || !onDownloadFull}
+              className="gap-1.5"
+            >
+              {fullPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Preparing full video…
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4" /> Download full video
+                </>
+              )}
+            </Button>
+          ) : (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleDownload}
+              disabled={!videoUrl}
+              className="gap-1.5"
+            >
+              <Download className="h-4 w-4" /> Download
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={handleShare} className="gap-1.5">
             <Share2 className="h-4 w-4" /> Share receipt
           </Button>
         </div>
+        )}
 
         {/* Route strip */}
         {(map?.lastPosition || map?.destination) && (
@@ -426,11 +541,14 @@ const VideoReceipt = ({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 text-success">
               <BadgeCheck className="h-4 w-4" />
-              <p className="text-sm font-semibold">Verified recording</p>
+              <p className="text-sm font-semibold">
+                {showVideo ? "Verified recording" : "Verified ride"}
+              </p>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              This receipt links a tamper-evident video to the trip above. Scan the code to
-              reopen the receipt on any device.
+              {showVideo
+                ? "This receipt links a tamper-evident video to the trip above. Scan the code to reopen the receipt on any device."
+                : "This receipt confirms the trip details above. Scan the code to reopen it on any device."}
             </p>
             <p className="mt-2 break-all font-mono text-[10px] text-muted-foreground">
               ID {receiptId}
