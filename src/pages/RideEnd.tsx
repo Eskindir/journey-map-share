@@ -256,6 +256,7 @@ const RideEnd = () => {
         receiptId={receiptId}
         videoUrl={videoUrl}
         shareUrl={shareUrl}
+        showVideo={!!riderKey}
         isFailed={videoState === "failed"}
         onRetry={retry}
         mode={mode}

@@ -6,6 +6,7 @@ import {
   AlertCircle,
   BadgeCheck,
   Car,
+  CheckCircle2,
   Clock,
   Download,
   Loader2,
@@ -35,6 +36,13 @@ export interface VideoReceiptProps {
   posterUrl?: string | null;
   /** URL used for the QR code + share sheet. Falls back to window.location.href. */
   shareUrl?: string;
+
+  /**
+   * Whether to show the video (rider only). Friends & family following the ride
+   * don't have the rider's key, so instead of the player they see an arrival
+   * confirmation. Default true.
+   */
+  showVideo?: boolean;
 
   /** True when the video request/merge has failed (shows a retry affordance). */
   isFailed?: boolean;
@@ -129,6 +137,7 @@ const VideoReceipt = ({
   videoUrl,
   posterUrl,
   shareUrl,
+  showVideo = true,
   isFailed,
   onRetry,
   mode = "full",
@@ -143,19 +152,9 @@ const VideoReceipt = ({
   locationHistory,
 }: VideoReceiptProps) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const previewRef = useRef<HTMLVideoElement | null>(null);
   const [videoReady, setVideoReady] = useState(false);
 
   const isPreview = mode === "preview";
-
-  // Loop the opening PREVIEW_SECONDS of the preview clip.
-  const handlePreviewTimeUpdate = () => {
-    const el = previewRef.current;
-    if (el && el.currentTime >= PREVIEW_SECONDS) {
-      el.currentTime = 0;
-      void el.play().catch(() => {});
-    }
-  };
 
   const resolvedShareUrl = useMemo(() => {
     if (shareUrl) return shareUrl;
@@ -175,6 +174,9 @@ const VideoReceipt = ({
       : trip.status === "RideEndedByDriver"
         ? "Ended by driver"
         : "Arrived safely";
+
+  const arrivalLabel =
+    trip.status === "Cancelled" ? "Ride cancelled" : "Customer has arrived";
 
   const handleDownload = async () => {
     if (!videoUrl) return;
@@ -242,7 +244,7 @@ const VideoReceipt = ({
                 BeSEC
               </p>
               <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
-                Video Receipt
+                {showVideo ? "Video Receipt" : "Ride Summary"}
               </p>
             </div>
           </div>
@@ -276,20 +278,33 @@ const VideoReceipt = ({
       <CardContent className="p-0">
         {/* Video hero (the receipt's "line item") */}
         <div className="relative aspect-video w-full bg-muted">
-          {isPreview ? (
+          {!showVideo ? (
+            /* Friends & family don't have the rider's key — show an arrival
+               confirmation instead of the video. */
+            <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-gradient-to-br from-success/15 via-success/5 to-transparent px-6 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-success/15 ring-4 ring-success/10">
+                <CheckCircle2 className="h-9 w-9 text-success" strokeWidth={2.5} />
+              </div>
+              <div className="space-y-1">
+                <p className="text-lg font-semibold">{arrivalLabel}</p>
+                <p className="text-xs text-muted-foreground">
+                  The ride has been completed.
+                </p>
+              </div>
+            </div>
+          ) : isPreview ? (
             /* PREVIEW MODE — ~15s looping clip; full video is on-demand (Download). */
             previewState === "ready" && previewUrl ? (
               <>
                 <video
-                  ref={previewRef}
                   src={previewUrl}
-                  muted
+                  controls
                   autoPlay
+                  muted
                   loop
                   playsInline
                   preload="metadata"
-                  onTimeUpdate={handlePreviewTimeUpdate}
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-contain bg-black"
                 />
                 <span className="pointer-events-none absolute right-3 top-3 rounded-full bg-black/70 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-white backdrop-blur-sm">
                   {PREVIEW_SECONDS}s preview
@@ -361,12 +376,15 @@ const VideoReceipt = ({
               </p>
             </div>
           )}
-          <div className="absolute left-3 top-3 rounded-md bg-black/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-white/90">
-            Rec · {receiptId.slice(-6).toUpperCase()}
-          </div>
+          {showVideo && (
+            <div className="absolute left-3 top-3 rounded-md bg-black/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-white/90">
+              Rec · {receiptId.slice(-6).toUpperCase()}
+            </div>
+          )}
         </div>
 
-        {/* Video actions */}
+        {/* Video actions (rider only) */}
+        {showVideo && (
         <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-3">
           {isPreview ? (
             <Button
@@ -401,6 +419,7 @@ const VideoReceipt = ({
             <Share2 className="h-4 w-4" /> Share receipt
           </Button>
         </div>
+        )}
 
         {/* Route strip */}
         {(map?.lastPosition || map?.destination) && (
@@ -522,11 +541,14 @@ const VideoReceipt = ({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 text-success">
               <BadgeCheck className="h-4 w-4" />
-              <p className="text-sm font-semibold">Verified recording</p>
+              <p className="text-sm font-semibold">
+                {showVideo ? "Verified recording" : "Verified ride"}
+              </p>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              This receipt links a tamper-evident video to the trip above. Scan the code to
-              reopen the receipt on any device.
+              {showVideo
+                ? "This receipt links a tamper-evident video to the trip above. Scan the code to reopen the receipt on any device."
+                : "This receipt confirms the trip details above. Scan the code to reopen it on any device."}
             </p>
             <p className="mt-2 break-all font-mono text-[10px] text-muted-foreground">
               ID {receiptId}
