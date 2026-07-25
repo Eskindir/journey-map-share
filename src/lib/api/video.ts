@@ -91,8 +91,10 @@ export async function requestRiderPreview(
     if (status === 404) {
       return { status: 'unavailable' };
     }
-    const message =
-      error instanceof Error ? error.message : 'Could not retrieve the preview.';
+    const serverMessage =
+      (error as { message?: string }).message || 'Could not retrieve the preview.';
+    // Include the HTTP status so a mobile failure is self-explanatory.
+    const message = status ? `(${status}) ${serverMessage}` : serverMessage;
     debugLog('Rider preview request failed:', error);
     return { status: 'error', message };
   }

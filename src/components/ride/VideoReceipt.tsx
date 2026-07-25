@@ -59,6 +59,8 @@ export interface VideoReceiptProps {
   previewUrl?: string | null;
   /** Preview request state (preview mode). */
   previewState?: "idle" | "loading" | "ready" | "unavailable" | "failed";
+  /** Reason a preview request failed (shown under the failed state). */
+  previewError?: string | null;
   /** Retry the preview request. */
   onRetryPreview?: () => void;
   /** Start preparing + downloading the full video (preview mode). */
@@ -143,6 +145,7 @@ const VideoReceipt = ({
   mode = "full",
   previewUrl,
   previewState = "idle",
+  previewError,
   onRetryPreview,
   onDownloadFull,
   fullPending,
@@ -316,6 +319,11 @@ const VideoReceipt = ({
                   <AlertCircle className="h-6 w-6 text-destructive" />
                 </div>
                 <p className="text-sm font-medium">Couldn&apos;t load the preview</p>
+                {previewError && (
+                  <p className="max-w-[90%] break-words text-xs text-muted-foreground">
+                    {previewError}
+                  </p>
+                )}
                 {onRetryPreview && (
                   <Button variant="outline" size="sm" onClick={onRetryPreview} className="gap-1.5">
                     <RotateCw className="h-4 w-4" /> Try again
