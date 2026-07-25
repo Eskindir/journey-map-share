@@ -121,7 +121,12 @@ export async function apiRequest<T>(
 
         try {
           errorData = await response.json();
-          errorMessage = (errorData.message as string) || errorMessage;
+          // Backend functions return { error: "..." }; some return { message: "..." }.
+          // Surface whichever is present so the real reason isn't swallowed.
+          errorMessage =
+            (errorData.message as string) ||
+            (errorData.error as string) ||
+            errorMessage;
         } catch {
           // Response body is not JSON, use status text
           errorMessage = response.statusText || errorMessage;

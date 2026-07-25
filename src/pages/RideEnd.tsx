@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { parseGPSCoordinates } from "@/lib/validation";
-import { isVideoFeatureEnabled } from "@/lib/config";
+import { config, isVideoFeatureEnabled } from "@/lib/config";
 import { getTrackingInfo } from "@/lib/api/tracking";
 import { reverseGeocode } from "@/lib/api/geocoding";
 import { getRiderKey } from "@/lib/riderKey";
@@ -117,8 +117,13 @@ const RideEnd = () => {
   const {
     previewState,
     previewUrl,
+    error: previewError,
     retry: retryPreview,
   } = useVideoPreview(isShortRide ? null : confirmationId, riderKey);
+
+  // Opt-in on-device diagnostics: append ?debug=1 to see why the video is/isn't
+  // loading (config, ids, key, request state) without mobile devtools.
+  const showDiagnostics = searchParams.get("debug") === "1";
 
   // Full video: on-demand for long rides (Download), auto for short rides.
   const { state: videoState, videoUrl, requestVideo, retry } = useVideoRequest(
@@ -262,6 +267,7 @@ const RideEnd = () => {
         mode={mode}
         previewUrl={previewUrl}
         previewState={previewState}
+        previewError={previewError}
         onRetryPreview={retryPreview}
         onDownloadFull={handleDownloadFull}
         fullPending={fullPending}
@@ -290,6 +296,26 @@ const RideEnd = () => {
         }}
         locationHistory={locationHistory}
       />
+
+      {showDiagnostics && (
+        <div className="mt-6 w-full max-w-lg rounded-lg border border-border bg-card p-4 text-left font-mono text-[11px] leading-relaxed text-foreground shadow-sm">
+          <p className="mb-2 font-sans text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Video diagnostics
+          </p>
+          <dl className="space-y-0.5 break-all">
+            <div>videoApi.baseUrl: <b>{config.videoApi.baseUrl || "(EMPTY)"}</b></div>
+            <div>videoApi.code: <b>{config.videoApi.functionCode ? "set" : "(EMPTY)"}</b></div>
+            <div>trackingId: <b>{trackingId || "(none)"}</b></div>
+            <div>confirmationId: <b>{confirmationId || "(UNRESOLVED)"}</b></div>
+            <div>riderKey: <b>{riderKey ? "present" : "MISSING"}</b></div>
+            <div>durationMs: <b>{durationMs ?? "(unknown)"}</b> → mode: <b>{mode}</b></div>
+            <div>previewState: <b>{previewState}</b></div>
+            <div>previewUrl: <b>{previewUrl ? "ready" : "(none)"}</b></div>
+            <div>previewError: <b>{previewError || "none"}</b></div>
+            <div>fullState: <b>{videoState}</b></div>
+          </dl>
+        </div>
+      )}
     </div>
   );
 };
