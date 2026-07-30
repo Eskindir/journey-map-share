@@ -11,7 +11,7 @@ const Index = () => {
 
       {/* Driver Panel Section */}
       <div className="w-full md:w-[420px] p-4 md:p-6 overflow-y-auto">
-        <DriverPanel />
+        <DriverPanel /> 
       </div>
     </div>
   );
