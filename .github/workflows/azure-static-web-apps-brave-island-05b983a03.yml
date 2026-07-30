@@ -21,23 +21,37 @@ jobs:
         with:
           submodules: true
           lfs: false
-      - name: Build And Deploy
-        id: builddeploy
-        uses: Azure/static-web-apps-deploy@v1
+      # Build on the GitHub runner (glibc >= 2.35) instead of Azure's Oryx image.
+      # Oryx's older glibc (2.31) can't load Rollup 4's native binary (needs
+      # GLIBC_2.32), which surfaced as a misleading "@rollup/rollup-linux-x64-gnu"
+      # error. Building here also bakes the VITE_* env into the bundle reliably.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm ci
+      - name: Build
+        run: npm run build
         env:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
           VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
           VITE_VIDEO_API_BASE_URL: ${{ secrets.VITE_VIDEO_API_BASE_URL }}
           VITE_VIDEO_API_CODE: ${{ secrets.VITE_VIDEO_API_CODE }}
+      - name: Build And Deploy
+        id: builddeploy
+        uses: Azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_BRAVE_ISLAND_05B983A03 }}
           repo_token: ${{ secrets.GITHUB_TOKEN }} # Used for Github integrations (i.e. PR comments)
           action: "upload"
-          ###### Repository/Build Configurations - These values can be configured to match your app requirements. ######
-          # For more information regarding Static Web App workflow configurations, please visit: https://aka.ms/swaworkflowconfig
-          app_location: "/" # App source code path
+          ###### Repository/Build Configurations ######
+          # We build above on the runner and only upload the prebuilt output here.
+          app_location: "build" # Prebuilt static content
           api_location: "" # Api source code path - optional
-          output_location: "build" # Built app content directory - optional
+          output_location: "" # Not used when skip_app_build is true
+          skip_app_build: true
+          skip_api_build: true
           ###### End of Repository/Build Configurations ######
 
   close_pull_request_job:
