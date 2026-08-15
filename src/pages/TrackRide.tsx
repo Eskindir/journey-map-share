@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -67,6 +67,31 @@ const TrackRide = () => {
   const [currentLocationAddress, setCurrentLocationAddress] = useState("");
   const [destinationAddress, setDestinationAddress] = useState("");
   const { toast } = useToast();
+
+  // Mobile: the info panel's height varies (watchers have no SOS slider / End Ride,
+  // so it's short). Measure it and reserve exactly that much space below the map, so
+  // the map grows to fill the rest instead of leaving a dark gap. Desktop floats the
+  // card top-right over a full-screen map, so no reserve there.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [panelHeight, setPanelHeight] = useState(0);
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const apply = () => setIsDesktop(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setPanelHeight(el.offsetHeight));
+    ro.observe(el);
+    setPanelHeight(el.offsetHeight);
+    return () => ro.disconnect();
+  }, []);
 
   const from = searchParams.get("from") || "Current Location";
   const to = searchParams.get("to") || "Destination";
@@ -735,8 +760,11 @@ const TrackRide = () => {
           </div>
         )}
       </div>
-      {/* Map - Full Screen */}
-      <div className="absolute inset-0 pb-[60vh] md:pb-0">
+      {/* Map - fills all space above the info panel (panel height measured on mobile) */}
+      <div
+        className="absolute inset-0"
+        style={{ paddingBottom: isDesktop ? 0 : panelHeight }}
+      >
         <MapView
           initialPosition={currentPosition || initialPosition || undefined}
           destinationPosition={destinationPosition || undefined}
@@ -746,7 +774,7 @@ const TrackRide = () => {
       </div>
 
       {/* Info Card - Desktop: Top Right, Mobile: Bottom */}
-      <Card className="absolute md:top-4 md:right-4 bottom-0 left-0 right-0 md:left-auto md:bottom-auto md:w-96 md:max-h-[calc(100vh-2rem)] max-h-[60vh] overflow-y-auto z-10 md:rounded-lg rounded-t-2xl md:rounded-b-lg border-t md:border shadow-2xl">
+      <Card ref={panelRef} className="absolute md:top-4 md:right-4 bottom-0 left-0 right-0 md:left-auto md:bottom-auto md:w-96 md:max-h-[calc(100vh-2rem)] max-h-[60vh] overflow-y-auto z-10 md:rounded-lg rounded-t-2xl md:rounded-b-lg border-t md:border shadow-2xl">
         <CardContent className="p-4 space-y-4">
           {/* Driver Info */}
           <div className="flex items-start gap-3 pb-4 border-b border-border">
