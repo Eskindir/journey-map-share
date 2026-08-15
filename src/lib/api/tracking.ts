@@ -470,6 +470,33 @@ export async function triggerSosAlert(params: {
 }
 
 /**
+ * Text the live-tracking link to the passenger's contacts at ride initiation.
+ *
+ * These are the same contacts stored for SOS (see lib/sosRecipients): the person who
+ * follows the ride is the one alerted if SOS fires. The backend `/tracking-link`
+ * endpoint builds the {UiBaseUrl}/t/{trackingId} message and sends it via SMS.
+ * Never throws — a notification failure must not block starting the ride.
+ */
+export async function sendTrackingLink(params: {
+  trackingId: string;
+  recipients: string[];
+  riderName?: string;
+}): Promise<boolean> {
+  const { trackingId, recipients, riderName } = params;
+  try {
+    await apiPost<unknown>('/tracking-link', {
+      trackingId,
+      recipients,
+      riderName: riderName ?? '',
+    });
+    return true;
+  } catch (error) {
+    debugLog('Failed to send tracking link:', error);
+    return false;
+  }
+}
+
+/**
  * Build tracking URL with all necessary parameters
  *
  * @param params - Tracking parameters

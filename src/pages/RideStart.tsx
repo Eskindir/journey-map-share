@@ -11,6 +11,7 @@ import {
   initiateTracking,
   buildTrackingUrl,
   reverseGeocode as apiReverseGeocode,
+  sendTrackingLink,
 } from "@/lib/api";
 import {
   storeSosRecipients,
@@ -353,6 +354,14 @@ const RideStart = () => {
       storeSosRecipients(trackingIdToUse, emergencyContacts);
       storeRememberedRecipients(emergencyContacts);
 
+      // New spec: the tracking-link recipient IS the SOS contact. Text the live link
+      // to those contacts now, at initiation. Best-effort — never blocks the ride.
+      await sendTrackingLink({
+        trackingId: trackingIdToUse,
+        recipients: emergencyContacts.map((c) => c.phone),
+        riderName: `${riderFirstName} ${riderLastName}`.trim() || undefined,
+      });
+
       // Build tracking URL for the rider (sendingTrackingInfo=true)
       const riderTrackUrl = buildTrackingUrl({
         from: currentLocation,
@@ -363,9 +372,9 @@ const RideStart = () => {
         sendingTrackingInfo: true,
       });
 
-      // Navigate rider to tracking view. (The manual "share my ride" gesture has
-      // been removed — tracking still starts and SOS contacts are captured above,
-      // so an SOS will text those contacts the /t/{trackingId} link.)
+      // Navigate rider to tracking view. (The manual "share my ride" gesture was
+      // removed — instead the /t/{trackingId} link is texted to the SOS contacts at
+      // initiation above, and again if an SOS is later triggered.)
       navigate(riderTrackUrl);
     } catch (error) {
       handleApiError(error);
