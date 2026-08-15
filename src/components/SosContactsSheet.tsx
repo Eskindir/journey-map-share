@@ -46,10 +46,10 @@ function dedupeByPhone(contacts: SosRecipient[]): SosRecipient[] {
 }
 
 /**
- * Guided step shown when the rider taps "Share Ride": captures the emergency
+ * Guided step shown when the rider taps "Start Tracking": captures the emergency
  * contacts to alert on SOS (address-book picker where supported, typed entry
- * otherwise) before handing off to the native share sheet. Sharing is hard-
- * required to have at least one contact with a phone number.
+ * otherwise) before tracking begins. At least one contact with a phone number is
+ * hard-required so an SOS can text them the tracking link.
  */
 export function SosContactsSheet({
   open,
