@@ -1,0 +1,37 @@
+{
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": ["/images/*.{png,jpg,gif,svg}", "/css/*", "/assets/*", "/*.{css,js,json,ico,png,jpg,gif,svg,webp,woff,woff2,ttf,eot}"]
+  },
+  "routes": [
+    {
+      "route": "/index.html",
+      "headers": { "cache-control": "no-cache" }
+    },
+    {
+      "route": "/sw.js",
+      "headers": { "cache-control": "no-cache" }
+    },
+    {
+      "route": "/manifest.webmanifest",
+      "headers": { "cache-control": "no-cache" }
+    },
+    {
+      "route": "/*",
+      "allowedRoles": ["anonymous"]
+    }
+  ],
+  "globalHeaders": {
+    "content-security-policy": "default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com https://maps.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https:",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "X-XSS-Protection": "1; mode=block"
+  },
+  "mimeTypes": {
+    ".json": "application/json",
+    ".webmanifest": "application/manifest+json"
+  },
+  "platform": {
+    "apiRuntime": "node:18"
+  }
+}
