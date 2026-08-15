@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { MapPin, Navigation, Bell, Share2 } from "lucide-react";
+import { MapPin, Navigation, Bell } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
 import { debugLog } from "@/lib/config";
@@ -363,38 +363,9 @@ const RideStart = () => {
         sendingTrackingInfo: true,
       });
 
-      // Public watcher link to share
-      const watcherUrl = `${window.location.origin}/t/${trackingIdToUse}`;
-
-      // Open the device's native share UI, falling back to clipboard
-      if (typeof navigator.share === "function") {
-        try {
-          await navigator.share({
-            title: "Track my ride",
-            text: "I'm taking a ride! Track me here:",
-            url: watcherUrl,
-          });
-        } catch (err) {
-          // User cancelled or share failed — non-fatal, continue to tracking view
-          debugLog("Web Share dismissed or failed:", err);
-        }
-      } else {
-        try {
-          await navigator.clipboard.writeText(watcherUrl);
-          toast({
-            title: "Link copied",
-            description: "Tracking link copied to clipboard.",
-          });
-        } catch (err) {
-          debugLog("Clipboard fallback failed:", err);
-          toast({
-            title: "Share unavailable",
-            description: watcherUrl,
-          });
-        }
-      }
-
-      // Navigate rider to tracking view
+      // Navigate rider to tracking view. (The manual "share my ride" gesture has
+      // been removed — tracking still starts and SOS contacts are captured above,
+      // so an SOS will text those contacts the /t/{trackingId} link.)
       navigate(riderTrackUrl);
     } catch (error) {
       handleApiError(error);
@@ -530,22 +501,22 @@ const RideStart = () => {
           </div>
         )}
 
-        {/* Share Button — opens the guided sheet to capture emergency contacts */}
+        {/* Start Tracking — opens the guided sheet to capture emergency contacts */}
         <Button
           onClick={handleShareClick}
           className="w-full h-12 text-base"
           size="lg"
           disabled={isSubmitting}
         >
-          <Share2 className="h-5 w-5 mr-2" />
-          {isSubmitting ? "Starting Tracking..." : "Share Ride"}
+          <Navigation className="h-5 w-5 mr-2" />
+          {isSubmitting ? "Starting Tracking..." : "Start Tracking"}
         </Button>
 
         {/* Disclaimer */}
         <p className="text-xs text-muted-foreground text-center px-4">
           {isSubmitting
             ? "Please wait while we initiate your ride tracking..."
-            : "We'll ask who to alert on SOS, then your device's share menu opens to send the tracking link."}
+            : "We'll ask who to alert on SOS, then start tracking your ride."}
         </p>
 
         {/* Guided emergency-contacts step (shown on Share) */}
