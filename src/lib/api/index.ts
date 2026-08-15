@@ -18,6 +18,7 @@ export {
   generateRideId,
   getTrackingInfo,
   triggerSosAlert,
+  sendTrackingLink,
 } from './tracking';
 export type {
   InitiateTrackingResult,
